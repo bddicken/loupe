@@ -6,22 +6,31 @@ enum Shortcut: Int, CaseIterable {
     case area = 1
     case adjustableArea
     case fullscreen
+    case previousArea
+    case timedArea
+    case timedFullscreen
 
     var title: String {
         switch self {
         case .area: "Capture Area"
         case .adjustableArea: "Capture Area (Adjust, then Capture)"
         case .fullscreen: "Capture Fullscreen"
+        case .previousArea: "Capture Previous Area"
+        case .timedArea: "Capture Area with Timer"
+        case .timedFullscreen: "Capture Fullscreen with Timer"
         }
     }
 
     /// Defaults avoid the system's ⌘⇧3/4/5.
-    var defaultBinding: KeyBinding {
+    var defaultBinding: KeyBinding? {
         let modifiers = UInt32(optionKey | shiftKey)
         switch self {
         case .area: return KeyBinding(keyCode: UInt32(kVK_ANSI_4), carbonModifiers: modifiers, keyLabel: "4")
         case .adjustableArea: return KeyBinding(keyCode: UInt32(kVK_ANSI_5), carbonModifiers: modifiers, keyLabel: "5")
         case .fullscreen: return KeyBinding(keyCode: UInt32(kVK_ANSI_3), carbonModifiers: modifiers, keyLabel: "3")
+        case .previousArea: return KeyBinding(keyCode: UInt32(kVK_ANSI_6), carbonModifiers: modifiers, keyLabel: "6")
+        case .timedArea: return KeyBinding(keyCode: UInt32(kVK_ANSI_7), carbonModifiers: modifiers, keyLabel: "7")
+        case .timedFullscreen: return nil
         }
     }
 
@@ -31,6 +40,9 @@ enum Shortcut: Int, CaseIterable {
         case .area: CaptureController.shared.captureArea(mode: .quick)
         case .adjustableArea: CaptureController.shared.captureArea(mode: .adjustable)
         case .fullscreen: CaptureController.shared.captureFullscreen()
+        case .previousArea: CaptureController.shared.capturePreviousArea()
+        case .timedArea: CaptureController.shared.captureAreaWithTimer()
+        case .timedFullscreen: CaptureController.shared.captureFullscreenWithTimer()
         }
     }
 }
@@ -153,7 +165,11 @@ final class ShortcutCenter {
 
     func resetToDefault(_ shortcut: Shortcut) {
         UserDefaults.standard.removeObject(forKey: defaultsKey(shortcut))
-        setBinding(shortcut.defaultBinding, for: shortcut)
+        if let binding = shortcut.defaultBinding {
+            setBinding(binding, for: shortcut)
+        } else {
+            apply()
+        }
     }
 
     private func store(_ binding: KeyBinding?, for shortcut: Shortcut) {

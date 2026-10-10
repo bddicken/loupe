@@ -172,6 +172,7 @@ private struct SettingsView: View {
     @AppStorage(Preferences.Key.showQuickAccess) private var showQuickAccess = true
     @AppStorage(Preferences.Key.playSound) private var playSound = true
     @AppStorage(Preferences.Key.imageFormat) private var imageFormat = ImageFormat.png.rawValue
+    @AppStorage(Preferences.Key.timerSeconds) private var timerSeconds = 5
 
     var body: some View {
         Form {
@@ -197,6 +198,9 @@ private struct SettingsView: View {
                 Toggle("Copy to clipboard", isOn: $copyToClipboard)
                 Toggle("Show quick access thumbnail", isOn: $showQuickAccess)
                 Toggle("Play sound", isOn: $playSound)
+                Picker("Self-timer", selection: $timerSeconds) {
+                    ForEach([3, 5, 10], id: \.self) { Text("\($0) seconds").tag($0) }
+                }
             }
 
             Section("Saving") {
@@ -268,7 +272,7 @@ private struct SettingsView: View {
                     Image(systemName: "arrow.counterclockwise")
                 }
                 .buttonStyle(.borderless)
-                .help("Reset to \(shortcut.defaultBinding.displayString)")
+                .help("Reset to \(shortcut.defaultBinding?.displayString ?? "None")")
                 .disabled(binding == shortcut.defaultBinding)
             }
         } label: {

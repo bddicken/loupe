@@ -96,6 +96,10 @@ final class EditorModel: ObservableObject {
     /// Stroke width in points; text and counters scale from it.
     @Published private(set) var annotationSize: Double = 4
     @Published var selectedAnnotationID: UUID?
+    /// A blur/pixelate region being dragged out; rendered live but not yet in `state`.
+    @Published var regionDraft: Annotation? {
+        didSet { if regionDraft != oldValue { scheduleRender() } }
+    }
 
     private var undoStack: [EditState] = []
     private var redoStack: [EditState] = []
@@ -307,7 +311,8 @@ final class EditorModel: ObservableObject {
 
     private func scheduleRender() {
         let token = latestRender.next()
-        let state = self.state
+        var state = self.state
+        if let regionDraft { state.annotations.append(regionDraft) }
         let applyCrop = !isCropping
         let source = previewSource
         let colorSpace = self.colorSpace
@@ -583,6 +588,11 @@ final class EditorModel: ObservableObject {
     }
 
     // MARK: - Output
+
+    func pin() {
+        guard let image = renderFullResolution() else { return }
+        PinManager.shared.pin(Screenshot(image: image, scale: screenshot.scale))
+    }
 
     func copyToPasteboard() {
         guard let image = renderFullResolution() else { return }

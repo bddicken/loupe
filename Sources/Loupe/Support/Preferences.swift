@@ -24,6 +24,7 @@ enum Preferences {
         static let showQuickAccess = "showQuickAccess"
         static let playSound = "playSound"
         static let imageFormat = "imageFormat"
+        static let timerSeconds = "timerSeconds"
     }
 
     static func registerDefaults() {
@@ -33,6 +34,7 @@ enum Preferences {
             Key.showQuickAccess: true,
             Key.playSound: true,
             Key.imageFormat: ImageFormat.png.rawValue,
+            Key.timerSeconds: 5,
         ])
     }
 
@@ -55,6 +57,7 @@ enum Preferences {
     static var copyToClipboard: Bool { registered { UserDefaults.standard.bool(forKey: Key.copyToClipboard) } }
     static var showQuickAccess: Bool { registered { UserDefaults.standard.bool(forKey: Key.showQuickAccess) } }
     static var playSound: Bool { registered { UserDefaults.standard.bool(forKey: Key.playSound) } }
+    static var timerSeconds: Int { registered { UserDefaults.standard.integer(forKey: Key.timerSeconds) } }
     static var imageFormat: ImageFormat {
         registered { ImageFormat(rawValue: UserDefaults.standard.string(forKey: Key.imageFormat) ?? "") ?? .png }
     }

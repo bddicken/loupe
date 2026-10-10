@@ -18,7 +18,7 @@ final class SelectionView: NSView {
     private weak var session: SelectionSession?
     private let mode: SelectionSession.Mode
 
-    private var selection: NSRect?
+    private(set) var selection: NSRect?
     private var dragState: DragState = .none
     private var mouseLocation: NSPoint?
     private let buttonBar: NSStackView
@@ -87,16 +87,8 @@ final class SelectionView: NSView {
 
     /// The selected region cropped from the snapshot at full pixel resolution.
     func capturedImage() -> CGImage? {
-        guard let selection, selection.width >= 1, selection.height >= 1 else { return nil }
-        let scale = snapshot.scale
-        let pixelRect = CGRect(
-            x: (selection.minX * scale).rounded(),
-            y: ((bounds.height - selection.maxY) * scale).rounded(),
-            width: (selection.width * scale).rounded(),
-            height: (selection.height * scale).rounded()
-        )
-        guard let cropped = snapshot.image.cropping(to: pixelRect) else { return nil }
-        return cropped.detachedCopy() ?? cropped
+        guard let selection else { return nil }
+        return snapshot.crop(selection)
     }
 
     // MARK: - Mouse

@@ -128,6 +128,8 @@ struct EditorView: View {
 
                 Spacer()
 
+                Button { model.pin() } label: { Image(systemName: "pin") }
+                    .help("Pin to screen")
                 Button("Copy") { model.copyToPasteboard() }
                     .help("Copy to clipboard (⌘C)")
                 Button("Save As…") { model.saveAs() }

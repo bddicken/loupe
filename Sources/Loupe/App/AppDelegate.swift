@@ -21,6 +21,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // `Loupe --debug-status-item` logs where the menu bar icon ended up.
+        if arguments.contains("--debug-status-item") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let button = self?.statusItem.button, let window = button.window else {
+                    print("status item: no button window")
+                    return
+                }
+                print("status item: frame \(window.frame), visible \(window.isVisible), " +
+                      "occluded \(!window.occlusionState.contains(.visible)), itemVisible \(self?.statusItem.isVisible ?? false)")
+                fflush(stdout)
+            }
+        }
+
         if !CGPreflightScreenCaptureAccess() {
             // Adds Loupe to System Settings > Privacy & Security > Screen Recording.
             CGRequestScreenCaptureAccess()
@@ -34,9 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status item
 
     private func setUpStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.autosaveName = "LoupeStatusItem"
+        statusItem.behavior = [] // Don't let ⌘-dragging remove it from the menu bar.
+        statusItem.isVisible = true
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Loupe")
+            button.image = StatusBarIcon.make()
+            button.toolTip = "Loupe"
         }
         rebuildStatusMenu()
     }
@@ -52,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Capture History…", action: #selector(openHistory), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open Image in Editor…", action: #selector(openImage), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -68,6 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func openHistory() {
+        HistoryWindowController.show()
+    }
+
     @objc private func openImage() {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
@@ -78,12 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openInEditor(_ url: URL) {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
-        // Respect Retina DPI metadata so the editor shows the image at its point size.
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let dpi = properties?[kCGImagePropertyDPIWidth] as? CGFloat ?? 72
-        let screenshot = Screenshot(image: image, scale: max(1, dpi / 72), fileURL: url)
+        guard let screenshot = Screenshot.load(from: url) else { return }
         EditorWindowController.open(screenshot)
     }
 

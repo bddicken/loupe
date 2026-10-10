@@ -14,14 +14,20 @@ CONFIG="${1:-release}"
 ROOT="${0:A:h:h}"
 cd "$ROOT"
 
-swift build -c "$CONFIG"
-BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+# Release builds are universal (Apple Silicon + Intel); macOS 14–26 all still run on Intel Macs.
+ARCH_FLAGS=()
+if [[ "$CONFIG" == "release" ]]; then
+  ARCH_FLAGS=(--arch arm64 --arch x86_64)
+fi
+swift build -c "$CONFIG" "${ARCH_FLAGS[@]}"
+BIN_DIR="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --show-bin-path)"
 
 APP="$ROOT/build/Loupe.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Loupe" "$APP/Contents/MacOS/Loupe"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 IDENTITY="${LOUPE_SIGN_IDENTITY:-}"
 if [[ -z "$IDENTITY" ]]; then

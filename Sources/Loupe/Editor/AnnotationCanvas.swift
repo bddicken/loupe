@@ -26,8 +26,24 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     private var contentRect: CGRect = .zero
     private var lastTool: AnnotationTool?
 
-    private var draft: Annotation?
+    private var draft: Annotation? {
+        didSet {
+            // Blur/pixelate drafts are rendered by the image pipeline so they preview live.
+            let regionDraft = draft?.kind.isRegionEffect == true ? draft : nil
+            MainActor.assumeIsolated {
+                if model.regionDraft != regionDraft { model.regionDraft = regionDraft }
+            }
+        }
+    }
     private var moving: (id: UUID, last: CGPoint, didCheckpoint: Bool)?
+
+    private enum Handle {
+        case endpoint(Int)
+        case corner(Int) // 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left
+    }
+    /// The fixed point while dragging a box corner is the opposite corner.
+    private var resizing: (id: UUID, handle: Handle, anchor: CGPoint, didCheckpoint: Bool)?
+    private let handleRadius: CGFloat = 4.5
 
     private var textField: NSTextField?
     /// The text annotation being edited, and whether it already exists in the model.
@@ -99,9 +115,60 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             strokeDashed(draft.rect.applying(transform), color: .white)
         }
         if let selected = annotations.first(where: { $0.id == selectedID }), selected.id != editing?.annotation.id {
-            let box = AnnotationRenderer.bounds(selected).applying(transform).insetBy(dx: -5, dy: -5)
-            strokeDashed(box, color: .controlAccentColor)
+            let handles = self.handles(for: selected)
+            if handles.isEmpty {
+                let box = AnnotationRenderer.bounds(selected).applying(transform).insetBy(dx: -5, dy: -5)
+                strokeDashed(box, color: .controlAccentColor)
+            } else {
+                drawHandles(handles.map { $0.point.applying(transform) }, in: context)
+            }
         }
+    }
+
+    private func drawHandles(_ points: [CGPoint], in context: CGContext) {
+        context.saveGState()
+        context.setShadow(offset: .zero, blur: 3, color: NSColor.black.withAlphaComponent(0.45).cgColor)
+        for point in points {
+            let circle = NSBezierPath(ovalIn: NSRect(
+                x: point.x - handleRadius, y: point.y - handleRadius, width: handleRadius * 2, height: handleRadius * 2
+            ))
+            NSColor.white.setFill()
+            circle.fill()
+            NSColor.controlAccentColor.setStroke()
+            circle.lineWidth = 1.5
+            circle.stroke()
+        }
+        context.restoreGState()
+    }
+
+    /// Endpoint handles for lines/arrows, corner handles for boxes (source pixels).
+    private func handles(for annotation: Annotation) -> [(handle: Handle, point: CGPoint)] {
+        switch annotation.kind {
+        case .arrow, .line:
+            return [(.endpoint(0), annotation.start), (.endpoint(1), annotation.end)]
+        case .rectangle, .ellipse, .blur, .pixelate:
+            let r = annotation.rect
+            return [
+                (.corner(0), CGPoint(x: r.minX, y: r.minY)),
+                (.corner(1), CGPoint(x: r.maxX, y: r.minY)),
+                (.corner(2), CGPoint(x: r.maxX, y: r.maxY)),
+                (.corner(3), CGPoint(x: r.minX, y: r.maxY)),
+            ]
+        default:
+            return []
+        }
+    }
+
+    @MainActor
+    private func handleHit(atViewPoint point: CGPoint) -> (annotation: Annotation, handle: Handle, point: CGPoint)? {
+        guard let selected = model.selectedAnnotation else { return nil }
+        for (handle, sourcePoint) in handles(for: selected) {
+            let p = sourcePoint.applying(transform)
+            if hypot(p.x - point.x, p.y - point.y) <= handleRadius + 4 {
+                return (selected, handle, sourcePoint)
+            }
+        }
+        return nil
     }
 
     private func strokeDashed(_ rect: CGRect, color: NSColor) {
@@ -135,6 +202,17 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         endTextEditing()
         window?.makeFirstResponder(self)
         let point = sourcePoint(event)
+
+        if let (selected, handle, _) = handleHit(atViewPoint: convert(event.locationInWindow, from: nil)) {
+            let anchor: CGPoint
+            switch handle {
+            case let .endpoint(index): anchor = selected.points[1 - index]
+            case let .corner(index): anchor = handles(for: selected)[(index + 2) % 4].point
+            }
+            resizing = (selected.id, handle, anchor, false)
+            return
+        }
+
         let hit = annotation(at: point)
 
         switch model.tool {
@@ -169,6 +247,23 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     override func mouseDragged(with event: NSEvent) {
         MainActor.assumeIsolated {
             let point = sourcePoint(event)
+            if var resize = resizing {
+                if !resize.didCheckpoint {
+                    model.checkpoint()
+                    resize.didCheckpoint = true
+                    resizing = resize
+                }
+                model.updateAnnotation(resize.id, checkpoint: false) { annotation in
+                    let target = event.modifierFlags.contains(.shift)
+                        ? constrained(point, from: resize.anchor, kind: annotation.kind)
+                        : point
+                    switch resize.handle {
+                    case let .endpoint(index): annotation.points[index] = target
+                    case .corner: annotation.points = [resize.anchor, target]
+                    }
+                }
+                return
+            }
             if var move = moving {
                 if !move.didCheckpoint {
                     model.checkpoint()
@@ -195,6 +290,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     override func mouseUp(with event: NSEvent) {
         MainActor.assumeIsolated {
             moving = nil
+            resizing = nil
             guard let draft else { return }
             self.draft = nil
             let isMeaningful = draft.kind.isFreehand

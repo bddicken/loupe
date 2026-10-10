@@ -158,6 +158,7 @@ private struct QuickAccessView: View {
                     }
                     Spacer()
                     HStack {
+                        CornerButton(symbol: "pin", help: "Pin to Screen", action: pin)
                         Spacer()
                         if screenshot.fileURL != nil {
                             CornerButton(symbol: "folder", help: "Show in Finder", action: reveal)
@@ -204,6 +205,11 @@ private struct QuickAccessView: View {
 
     private func edit() {
         EditorWindowController.open(screenshot)
+        dismiss()
+    }
+
+    private func pin() {
+        PinManager.shared.pin(screenshot)
         dismiss()
     }
 

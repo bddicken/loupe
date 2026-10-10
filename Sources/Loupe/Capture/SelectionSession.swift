@@ -13,7 +13,7 @@ final class SelectionSession {
     }
 
     enum Result {
-        case image(CGImage, scale: CGFloat)
+        case image(CGImage, scale: CGFloat, area: CaptureArea)
         case window(CGWindowID)
     }
 
@@ -63,8 +63,10 @@ final class SelectionSession {
     }
 
     func capture(from view: SelectionView) {
-        guard let image = view.capturedImage() else { return }
-        finish(with: .image(image, scale: view.snapshot.scale))
+        guard let image = view.capturedImage(), let selection = view.selection,
+              let displayID = view.snapshot.screen.displayID else { return }
+        let area = CaptureArea(displayID: displayID, rect: selection)
+        finish(with: .image(image, scale: view.snapshot.scale, area: area))
     }
 
     func captureWindow(_ window: WindowInfo) {

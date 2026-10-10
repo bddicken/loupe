@@ -7,6 +7,20 @@ struct DisplaySnapshot {
     let image: CGImage
 
     var scale: CGFloat { CGFloat(image.width) / screen.frame.width }
+
+    /// Crops to `rect` in screen-local points (y-up), at full pixel resolution.
+    func crop(_ rect: CGRect) -> CGImage? {
+        guard rect.width >= 1, rect.height >= 1 else { return nil }
+        let pixelRect = CGRect(
+            x: (rect.minX * scale).rounded(),
+            y: ((screen.frame.height - rect.maxY) * scale).rounded(),
+            width: (rect.width * scale).rounded(),
+            height: (rect.height * scale).rounded()
+        )
+        guard let cropped = image.cropping(to: pixelRect) else { return nil }
+        // Copy so a small crop doesn't keep the whole display snapshot in memory.
+        return cropped.detachedCopy() ?? cropped
+    }
 }
 
 /// An on-screen window that can be picked in the selection overlay.

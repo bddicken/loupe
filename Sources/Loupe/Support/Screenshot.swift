@@ -17,6 +17,15 @@ final class Screenshot {
         self.date = date
     }
 
+    /// Loads an image file, honoring Retina DPI metadata so it shows at its point size.
+    static func load(from url: URL) -> Screenshot? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let dpi = properties?[kCGImagePropertyDPIWidth] as? CGFloat ?? 72
+        return Screenshot(image: image, scale: max(1, dpi / 72), fileURL: url)
+    }
+
     var pointSize: NSSize {
         NSSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
     }
