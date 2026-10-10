@@ -117,7 +117,7 @@ perl -pe '
   s/\{\{DOWNLOAD_URL\}\}/$ENV{PAGE_URL}/g; s/\{\{VERSION\}\}/$ENV{PAGE_VERSION}/g;
   s/\{\{GATEKEEPER_OPEN\}\}/$ENV{PAGE_GK_OPEN}/g; s/\{\{GATEKEEPER_INTRO\}\}/$ENV{PAGE_GK_INTRO}/g;
 ' "$ROOT/site/index.html" > "$WEB/index.html"
-# Vercel config: a stable /download link to this release; only deploy when web/ changes.
+# Vercel config: a stable /download link to this release.
 DOWNLOAD_PATH="$DMG_URL" perl -pe 's/\{\{DOWNLOAD_PATH\}\}/$ENV{DOWNLOAD_PATH}/g' "$ROOT/site/vercel.json" > "$WEB/vercel.json"
 
 # Sparkle update feed.
