@@ -1,15 +1,26 @@
 {
   "cleanUrls": true,
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- .",
   "headers": [
     {
       "source": "/(.*)\\.dmg",
       "headers": [
-        { "key": "Content-Type", "value": "application/x-apple-diskimage" },
-        { "key": "Content-Disposition", "value": "attachment" }
+        {
+          "key": "Content-Type",
+          "value": "application/x-apple-diskimage"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment"
+        }
       ]
     }
   ],
   "redirects": [
-    { "source": "/download", "destination": "{{DOWNLOAD_PATH}}", "permanent": false }
+    {
+      "source": "/download",
+      "destination": "{{DOWNLOAD_PATH}}",
+      "permanent": false
+    }
   ]
 }

@@ -1,0 +1,3 @@
+# Only the site (web/) is deployed; keep sources and build output out of uploads.
+/*
+!/web

@@ -1,23 +1,18 @@
 #!/bin/zsh
-# Deploys dist/site/ (made by scripts/release.sh) to Vercel production, served at loupe.pics.
+# Manually deploys web/ to Vercel production (loupe.pics).
 #
-# Usage: scripts/deploy-site.sh
+# Normally you don't need this: the Vercel project is connected to the GitHub
+# repo and deploys web/ whenever a push changes it (scripts/release.sh pushes).
+# Use it to redeploy without a commit, e.g. if a Git deploy failed.
 #
-# Needs the Vercel CLI (`npm i -g vercel`) and `vercel login`. The first run
-# links dist/site/ to the "loupe" Vercel project; release.sh keeps that link.
+# Needs the Vercel CLI (`npm i -g vercel`) and `vercel login`. The project's
+# Root Directory is web/, so this deploys from the repo root.
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-SITE="$ROOT/dist/site"
+cd "$ROOT"
 PROJECT="${LOUPE_VERCEL_PROJECT:-loupe}"
 
-if [[ ! -f "$SITE/index.html" ]]; then
-  echo "No $SITE/index.html. Run scripts/release.sh <version> first." >&2
-  exit 1
-fi
-
-if [[ ! -f "$SITE/.vercel/project.json" ]]; then
-  vercel link --yes --project "$PROJECT" --cwd "$SITE"
-fi
-
-vercel deploy --prod --yes --cwd "$SITE"
+[[ -f web/index.html ]] || { echo "No web/index.html. Run scripts/release.sh <version> first." >&2; exit 1; }
+[[ -f .vercel/project.json ]] || vercel link --yes --project "$PROJECT"
+vercel deploy --prod --yes

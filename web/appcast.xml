@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Loupe</title>
+    <link>https://loupe.pics/appcast.xml</link>
+    <item>
+      <title>Loupe 1.0.0</title>
+      <pubDate>Sat, 10 Oct 2026 21:43:33 +0000</pubDate>
+      <sparkle:version>30</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h2>Loupe 1.0</h2>
+<p>A fast, native screenshot tool for macOS.</p>
+<ul>
+  <li><strong>Capture</strong> an area, a single window, or the full screen. Adjust a selection before capturing, re-capture the previous area, or use the self-timer.</li>
+  <li><strong>Mark up</strong> with arrows, lines, shapes, text, highlighter, numbered steps, blur and pixelate. Annotations are layers you can select, move, resize and reorder.</li>
+  <li><strong>Backgrounds:</strong> 40 gradients and textures (neutral, light, dark, colorful and textured), solid colors or your own image, with padding, rounded corners and shadows that update instantly.</li>
+  <li><strong>Crop</strong> past the image's edges, and zoom and pan with your trackpad.</li>
+  <li>Adjust exposure, contrast, saturation, hue and more; rotate and flip.</li>
+  <li>Quick-access thumbnail after every capture, capture history, and screenshots pinned above other windows.</li>
+  <li>Custom shortcuts, launch at login, and automatic updates.</li>
+</ul>
+      ]]></description>
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.0/Loupe-1.0.0.dmg" type="application/octet-stream" sparkle:edSignature="PZxJCSnAG5HA2ltSsOW1D4zod4Ui4dYjUezkeoIzLy4R8xDEGVKRDZp6xFNyv4vgnlfbQn7md+i+8VuHvkxcBA==" length="3049158" />
+    </item>
+  </channel>
+</rss>
