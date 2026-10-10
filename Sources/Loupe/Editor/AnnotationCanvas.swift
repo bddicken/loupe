@@ -40,9 +40,10 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     private enum Handle {
         case endpoint(Int)
         case corner(Int) // 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left
+        case scale(Int) // Bounding-box corner that scales text, counters and freehand strokes.
     }
     /// The fixed point while dragging a box corner is the opposite corner.
-    private var resizing: (id: UUID, handle: Handle, anchor: CGPoint, didCheckpoint: Bool)?
+    private var resizing: (id: UUID, handle: Handle, anchor: CGPoint, original: Annotation, didCheckpoint: Bool)?
     private let handleRadius: CGFloat = 4.5
 
     private var textField: NSTextField?
@@ -116,12 +117,10 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         }
         if let selected = annotations.first(where: { $0.id == selectedID }), selected.id != editing?.annotation.id {
             let handles = self.handles(for: selected)
-            if handles.isEmpty {
-                let box = AnnotationRenderer.bounds(selected).applying(transform).insetBy(dx: -5, dy: -5)
-                strokeDashed(box, color: .controlAccentColor)
-            } else {
-                drawHandles(handles.map { $0.point.applying(transform) }, in: context)
+            if case .scale = handles.first?.handle {
+                strokeDashed(AnnotationRenderer.bounds(selected).applying(transform), color: .controlAccentColor)
             }
+            drawHandles(handles.map { $0.point.applying(transform) }, in: context)
         }
     }
 
@@ -154,8 +153,14 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
                 (.corner(2), CGPoint(x: r.maxX, y: r.maxY)),
                 (.corner(3), CGPoint(x: r.minX, y: r.maxY)),
             ]
-        default:
-            return []
+        case .text, .step, .pen, .highlighter:
+            let r = AnnotationRenderer.bounds(annotation)
+            return [
+                (.scale(0), CGPoint(x: r.minX, y: r.minY)),
+                (.scale(1), CGPoint(x: r.maxX, y: r.minY)),
+                (.scale(2), CGPoint(x: r.maxX, y: r.maxY)),
+                (.scale(3), CGPoint(x: r.minX, y: r.maxY)),
+            ]
         }
     }
 
@@ -207,37 +212,37 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             let anchor: CGPoint
             switch handle {
             case let .endpoint(index): anchor = selected.points[1 - index]
-            case let .corner(index): anchor = handles(for: selected)[(index + 2) % 4].point
+            case let .corner(index), let .scale(index): anchor = handles(for: selected)[(index + 2) % 4].point
             }
-            resizing = (selected.id, handle, anchor, false)
+            resizing = (selected.id, handle, anchor, selected, false)
             return
         }
 
-        let hit = annotation(at: point)
+        // With a drawing tool, clicking an existing annotation selects it
+        // (⌥ forces drawing on top instead).
+        let isSelectTool = model.tool == .select
+        let hit = isSelectTool || !event.modifierFlags.contains(.option) ? annotation(at: point, interior: isSelectTool) : nil
+
+        if let hit {
+            model.selectedAnnotationID = hit.id
+            if hit.kind == .text, event.clickCount == 2 || model.tool == .text {
+                beginTextEditing(hit, isNew: false)
+            } else {
+                moving = (hit.id, point, false)
+            }
+            needsDisplay = true
+            return
+        }
 
         switch model.tool {
         case .select:
-            model.selectedAnnotationID = hit?.id
-            guard let hit else { break }
-            if event.clickCount == 2, hit.kind == .text {
-                beginTextEditing(hit, isNew: false)
-            } else {
-                moving = (hit.id, point, false)
-            }
+            model.selectedAnnotationID = nil
         case .text:
-            if let hit, hit.kind == .text {
-                model.selectedAnnotationID = hit.id
-                beginTextEditing(hit, isNew: false)
-            } else {
-                beginTextEditing(model.newAnnotation(.text, points: [point]), isNew: true)
-            }
+            beginTextEditing(model.newAnnotation(.text, points: [point]), isNew: true)
         case .step:
             model.addAnnotation(model.newAnnotation(.step, points: [point]))
         default:
-            // Dragging the selected annotation moves it; anywhere else draws.
-            if let hit, hit.id == model.selectedAnnotationID {
-                moving = (hit.id, point, false)
-            } else if let kind = model.tool.kind {
+            if let kind = model.tool.kind {
                 draft = model.newAnnotation(kind, points: kind.isFreehand ? [point] : [point, point])
             }
         }
@@ -260,6 +265,15 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
                     switch resize.handle {
                     case let .endpoint(index): annotation.points[index] = target
                     case .corner: annotation.points = [resize.anchor, target]
+                    case .scale:
+                        // Uniform scale, keeping the opposite corner fixed.
+                        let box = AnnotationRenderer.bounds(resize.original)
+                        let factor = max(
+                            abs(point.x - resize.anchor.x) / max(box.width, 1),
+                            abs(point.y - resize.anchor.y) / max(box.height, 1),
+                            0.1
+                        )
+                        annotation = resize.original.scaled(by: factor, about: resize.anchor)
                     }
                 }
                 return
@@ -315,13 +329,22 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         return CGPoint(x: start.x + cos(angle) * length, y: start.y + sin(angle) * length)
     }
 
+    /// The topmost annotation under `point`. With `interior`, a click inside a
+    /// hollow box also counts, preferring the smallest box so shapes nested
+    /// inside a larger one stay reachable.
     @MainActor
-    private func annotation(at point: CGPoint) -> Annotation? {
-        // Topmost first.
-        model.state.annotations.reversed().first {
-            AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance)
+    private func annotation(at point: CGPoint, interior: Bool) -> Annotation? {
+        let annotations = model.state.annotations
+        if let hit = annotations.reversed().first(where: { AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance) }) {
+            return hit
         }
+        guard interior else { return nil }
+        return annotations
+            .filter { AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance, interior: true) }
+            .min { area(AnnotationRenderer.bounds($0)) < area(AnnotationRenderer.bounds($1)) }
     }
+
+    private func area(_ rect: CGRect) -> CGFloat { rect.width * rect.height }
 
     // MARK: - Keyboard
 
@@ -333,6 +356,12 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     @MainActor
     private func handleKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control])
+        if modifiers == .command, event.keyCode == 30 || event.keyCode == 33 { // ⌘] / ⌘[ (⇧ = to front/back)
+            let shift = event.modifierFlags.contains(.shift)
+            let forward = event.keyCode == 30
+            model.moveSelectedAnnotation(forward ? (shift ? .front : .forward) : (shift ? .back : .backward))
+            return true
+        }
         guard modifiers.isEmpty else { return false }
 
         switch Int(event.keyCode) {

@@ -159,6 +159,10 @@ private struct EditorSidebar: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                if !model.state.annotations.isEmpty {
+                    LayersSection(model: model)
+                }
+
                 section("Crop & Rotate") {
                     Button {
                         model.isCropping ? model.commitCrop() : model.beginCrop()
@@ -215,6 +219,75 @@ private struct EditorSidebar: View {
                 .frame(maxWidth: .infinity, minHeight: 20)
         }
         .controlSize(.large)
+        .help(help)
+    }
+}
+
+// MARK: - Layers
+
+/// Annotations as layers, topmost first: click to select, then reorder or delete.
+private struct LayersSection: View {
+    @ObservedObject var model: EditorModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Layers")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 1) {
+                ForEach(model.state.annotations.reversed()) { annotation in
+                    row(annotation)
+                }
+            }
+
+            HStack(spacing: 6) {
+                layerButton("square.3.layers.3d.top.filled", help: "Bring to Front (⇧⌘])") { model.moveSelectedAnnotation(.front) }
+                layerButton("square.2.layers.3d.top.filled", help: "Bring Forward (⌘])") { model.moveSelectedAnnotation(.forward) }
+                layerButton("square.2.layers.3d.bottom.filled", help: "Send Backward (⌘[)") { model.moveSelectedAnnotation(.backward) }
+                layerButton("square.3.layers.3d.bottom.filled", help: "Send to Back (⇧⌘[)") { model.moveSelectedAnnotation(.back) }
+                layerButton("trash", help: "Delete (⌫)") { model.deleteSelectedAnnotation() }
+            }
+            .disabled(model.selectedAnnotationID == nil)
+        }
+    }
+
+    private func row(_ annotation: Annotation) -> some View {
+        let isSelected = annotation.id == model.selectedAnnotationID
+        return HStack(spacing: 8) {
+            Image(systemName: annotation.symbol)
+                .frame(width: 16)
+                .foregroundStyle(isSelected ? .white : .secondary)
+            Text(annotation.layerName)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            if !annotation.kind.isRegionEffect {
+                Circle()
+                    .fill(annotation.color.color)
+                    .frame(width: 10, height: 10)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 1))
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(isSelected ? .white : .primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected ? Color.accentColor : .clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.selectedAnnotationID = isSelected ? nil : annotation.id
+        }
+    }
+
+    private func layerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(maxWidth: .infinity, minHeight: 18)
+        }
         .help(help)
     }
 }
