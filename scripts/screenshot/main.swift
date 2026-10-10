@@ -1,9 +1,8 @@
 // Renders site/editor.png: the real Loupe editor (offscreen, dark mode) editing
-// a capture of loupe.pics with markup and a gradient background.
+// a painted mountain-lake landscape with markup and a gradient background.
 // Built and run by scripts/make-screenshot.sh.
 import AppKit
 import SwiftUI
-import WebKit
 
 @main
 enum MakeScreenshot {
@@ -13,65 +12,225 @@ enum MakeScreenshot {
         app.setActivationPolicy(.accessory)
         let output = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "site/editor.png")
 
-        let page = try await capturePage(URL(string: "https://loupe.pics")!, size: CGSize(width: 1000, height: 860))
-        let image = try await makeEditorImage(capture: page)
+        let scene = paintLandscape(size: CGSize(width: 1000, height: 700), scale: 2)
+        let image = try await makeEditorImage(capture: scene)
         try image.representation(using: .png, properties: [:])!.write(to: output)
         print("Wrote \(output.path) (\(image.pixelsWide)×\(image.pixelsHigh))")
     }
 
-    struct PageCapture {
+    struct Landscape {
         let image: CGImage
-        /// Element rects in CSS points, keyed by name.
-        let rects: [String: CGRect]
-        /// Page width in CSS points.
-        let width: CGFloat
+        /// Pixels per point.
+        let scale: CGFloat
+        /// Landmarks in points, top-left origin, keyed by name.
+        let points: [String: CGPoint]
     }
 
-    // MARK: - The page being "screenshotted"
+    // MARK: - The photo being "screenshotted"
 
-    @MainActor
-    static func capturePage(_ url: URL, size: CGSize) async throws -> PageCapture {
-        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless, backing: .buffered, defer: false)
-        window.alphaValue = 0
-        let webView = WKWebView(frame: CGRect(origin: .zero, size: size))
-        webView.appearance = NSAppearance(named: .aqua)
-        window.contentView = webView
-        window.orderFront(nil)
-        webView.load(URLRequest(url: url))
-        while webView.isLoading { await pause(0.1) }
-        await pause(1.0) // Fonts and the icon.
+    /// Deterministic RNG so the painting is the same on every run.
+    struct Seeded {
+        var state: UInt64
+        mutating func next() -> CGFloat {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return CGFloat(state >> 33) / CGFloat(1 << 31)
+        }
+    }
 
-        let script = """
-        JSON.stringify(Object.fromEntries([
-          ['download', '.download'], ['tagline', '.tagline'], ['features', 'h2'], ['firstFeature', '.features li'], ['meta', '.meta']
-        ].map(([k, s]) => { const r = document.querySelector(s).getBoundingClientRect(); return [k, [r.x, r.y, r.width, r.height]]; })))
-        """
-        let json = try await webView.evaluateJavaScript(script) as! String
-        let raw = try JSONDecoder().decode([String: [Double]].self, from: Data(json.utf8))
-        let rects = raw.mapValues { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) }
+    /// A ridge line by midpoint displacement: `count` heights (0…1) across the width.
+    static func ridge(_ rng: inout Seeded, count: Int = 257, roughness: CGFloat) -> [CGFloat] {
+        var h = [CGFloat](repeating: 0, count: count)
+        h[0] = rng.next(); h[count - 1] = rng.next()
+        var step = count - 1, amplitude: CGFloat = 0.5
+        while step > 1 {
+            let half = step / 2
+            for i in stride(from: half, to: count, by: step) {
+                h[i] = (h[i - half] + h[i + half]) / 2 + (rng.next() - 0.5) * amplitude
+            }
+            step = half
+            amplitude *= roughness
+        }
+        return h
+    }
 
-        let config = WKSnapshotConfiguration()
-        config.snapshotWidth = NSNumber(value: Double(size.width)) // points; pixels depend on the display
-        let snapshot = try await webView.takeSnapshot(configuration: config)
-        window.orderOut(nil)
-        return PageCapture(image: snapshot.cgImage(forProposedRect: nil, context: nil, hints: nil)!, rects: rects, width: size.width)
+    static func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
+        CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+    }
+
+    /// Paints a mountain lake at dusk: stars, a low sun, hazy ridges, pines, a cabin and the reflection.
+    static func paintLandscape(size: CGSize, scale: CGFloat) -> Landscape {
+        let width = size.width, height = size.height
+        let shore: CGFloat = 470 // Water line, from the top.
+        var rng = Seeded(state: 0x10_0be)
+        let context = CGContext(
+            data: nil, width: Int(width * scale), height: Int(height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        // Work in points with a top-left origin.
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: 0, y: height)
+        context.scaleBy(x: 1, y: -1)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        func gradient(_ stops: [(UInt32, CGFloat)]) -> CGGradient {
+            CGGradient(colorsSpace: space, colors: stops.map { color($0.0) } as CFArray, locations: stops.map(\.1))!
+        }
+
+        // Sky.
+        context.drawLinearGradient(
+            gradient([(0x141A3F, 0), (0x3B2A68, 0.35), (0x9A4A7E, 0.68), (0xF0896A, 0.9), (0xFFC58A, 1)]),
+            start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: shore), options: [.drawsAfterEndLocation]
+        )
+        // Stars, fading toward the horizon.
+        for _ in 0..<260 {
+            let x = rng.next() * width, y = pow(rng.next(), 1.6) * shore * 0.6
+            let r = 0.4 + rng.next() * 0.9
+            context.setFillColor(CGColor(gray: 1, alpha: (0.25 + rng.next() * 0.7) * (1 - y / (shore * 0.6))))
+            context.fillEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+        }
+        // Sun and glow.
+        let sun = CGPoint(x: 700, y: 262)
+        context.drawRadialGradient(
+            CGGradient(colorsSpace: space, colors: [color(0xFFD9A0, 0.75), color(0xFF9A6A, 0.25), color(0xFF7A6A, 0)] as CFArray, locations: [0, 0.3, 1])!,
+            startCenter: sun, startRadius: 0, endCenter: sun, endRadius: 300, options: []
+        )
+        context.setFillColor(color(0xFFE8BE))
+        context.fillEllipse(in: CGRect(x: sun.x - 44, y: sun.y - 44, width: 88, height: 88))
+
+        // Ridges, far to near: (base, height, roughness, colour). Far ones take on the sky's haze.
+        let layers: [(CGFloat, CGFloat, CGFloat, UInt32)] = [
+            (400, 150, 0.55, 0xB86A8C), (430, 210, 0.52, 0x7A4677), (455, 150, 0.5, 0x48305E), (472, 90, 0.48, 0x241B3D),
+        ]
+        var summit = CGPoint.zero
+        for (index, layer) in layers.enumerated() {
+            var h = ridge(&rng, roughness: layer.2)
+            if index == 1 { // The tall one: a clear summit left of centre.
+                for i in h.indices {
+                    let d = (CGFloat(i) / CGFloat(h.count - 1) - 0.3) / 0.11
+                    h[i] += 0.75 * exp(-d * d)
+                }
+            }
+            let lo = h.min()!, hi = h.max()!
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: 0, y: height))
+            for (i, value) in h.enumerated() {
+                let point = CGPoint(x: CGFloat(i) / CGFloat(h.count - 1) * width, y: layer.0 - (value - lo) / (hi - lo) * layer.1)
+                path.addLine(to: point)
+                if index == 1, point.y < (summit == .zero ? .infinity : summit.y) { summit = point }
+            }
+            path.addLine(to: CGPoint(x: width, y: height))
+            path.closeSubpath()
+            context.saveGState()
+            context.addPath(path)
+            context.clip()
+            let top = layer.0 - layer.1
+            context.drawLinearGradient(
+                CGGradient(colorsSpace: space, colors: [color(layer.3), color(layer.3, 1).copy(alpha: 1)!, color(0x120E24)] as CFArray, locations: [0, 0.4, 1])!,
+                start: CGPoint(x: 0, y: top), end: CGPoint(x: 0, y: height + 200 - CGFloat(index) * 40), options: []
+            )
+            // Snow on the tall one's summit.
+            if index == 1 {
+                let snow = CGMutablePath()
+                snow.move(to: CGPoint(x: summit.x - 90, y: summit.y - 10))
+                for i in 0...8 {
+                    let x = summit.x - 90 + CGFloat(i) * 22.5
+                    snow.addLine(to: CGPoint(x: x, y: summit.y + 22 + (i % 2 == 0 ? 10 : -4) - abs(x - summit.x) * 0.12))
+                }
+                snow.addLine(to: CGPoint(x: summit.x + 90, y: summit.y - 10))
+                context.addPath(snow)
+                context.setFillColor(CGColor(gray: 1, alpha: 0.75))
+                context.fillPath()
+            }
+            context.restoreGState()
+        }
+
+        // Pines along both shores.
+        func pine(_ x: CGFloat, _ base: CGFloat, _ h: CGFloat) {
+            let w = h * 0.32
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: x, y: base - h))
+            for tier in 1...4 {
+                let y = base - h + h * CGFloat(tier) / 4.4
+                let spread = w * (0.35 + 0.65 * CGFloat(tier) / 4)
+                path.addLine(to: CGPoint(x: x + spread, y: y))
+                path.addLine(to: CGPoint(x: x + spread * 0.45, y: y - h * 0.04))
+            }
+            for tier in (1...4).reversed() {
+                let y = base - h + h * CGFloat(tier) / 4.4
+                let spread = w * (0.35 + 0.65 * CGFloat(tier) / 4)
+                path.addLine(to: CGPoint(x: x - spread * 0.45, y: y - h * 0.04))
+                path.addLine(to: CGPoint(x: x - spread, y: y))
+            }
+            path.closeSubpath()
+            context.addPath(path)
+            context.addRect(CGRect(x: x - w * 0.06, y: base - h * 0.12, width: w * 0.12, height: h * 0.12))
+            context.setFillColor(color(0x0C0A18))
+            context.fillPath()
+        }
+        // Low banks the trees stand on.
+        context.setFillColor(color(0x0C0A18))
+        context.fill(CGRect(x: 0, y: shore - 6, width: 300, height: 8))
+        context.fill(CGRect(x: 760, y: shore - 4, width: 240, height: 6))
+        var x: CGFloat = -10
+        while x < 290 { pine(x, shore, 70 + rng.next() * 110 - x * 0.18); x += 14 + rng.next() * 16 }
+        x = 800
+        while x < 1010 { pine(x, shore, 50 + rng.next() * 80 + (x - 800) * 0.35); x += 13 + rng.next() * 15 }
+
+        // A cabin with a lit window, on the right bank.
+        let cabin = CGRect(x: 700, y: shore - 30, width: 46, height: 28)
+        context.setFillColor(color(0x0C0A18))
+        context.fill(cabin)
+        context.move(to: CGPoint(x: cabin.minX - 6, y: cabin.minY))
+        context.addLine(to: CGPoint(x: cabin.midX, y: cabin.minY - 20))
+        context.addLine(to: CGPoint(x: cabin.maxX + 6, y: cabin.minY))
+        context.fillPath()
+        context.fill(CGRect(x: cabin.maxX - 14, y: cabin.minY - 22, width: 6, height: 14)) // Chimney.
+        let window = CGRect(x: cabin.minX + 10, y: cabin.minY + 9, width: 11, height: 10)
+        context.drawRadialGradient(
+            CGGradient(colorsSpace: space, colors: [color(0xFFC46A, 0.55), color(0xFFC46A, 0)] as CFArray, locations: [0, 1])!,
+            startCenter: CGPoint(x: window.midX, y: window.midY), startRadius: 0, endCenter: CGPoint(x: window.midX, y: window.midY), endRadius: 30, options: []
+        )
+        context.setFillColor(color(0xFFD27A))
+        context.fill(window)
+
+        // The lake: the scene above, mirrored, darkened, with ripples.
+        let above = context.makeImage()!.cropping(to: CGRect(x: 0, y: 0, width: width * scale, height: shore * scale))!
+        context.saveGState()
+        context.translateBy(x: 0, y: shore * 2)
+        context.scaleBy(x: 1, y: -1)
+        // CGContext draws images upright in its own (flipped here) space, so this lands mirrored below the shore.
+        context.translateBy(x: 0, y: shore)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(above, in: CGRect(x: 0, y: 0, width: width, height: shore))
+        context.restoreGState()
+        context.drawLinearGradient(
+            CGGradient(colorsSpace: space, colors: [color(0x1A1433, 0.35), color(0x0A0818, 0.85)] as CFArray, locations: [0, 1])!,
+            start: CGPoint(x: 0, y: shore), end: CGPoint(x: 0, y: height), options: []
+        )
+        for _ in 0..<140 {
+            let y = shore + 4 + pow(rng.next(), 1.4) * (height - shore)
+            let length = 20 + rng.next() * 140 * (y - shore) / (height - shore)
+            let cx = rng.next() < 0.45 ? sun.x + (rng.next() - 0.5) * 110 : rng.next() * width
+            let nearSun = abs(cx - sun.x) < 70
+            context.setFillColor(nearSun ? color(0xFFD9A0, 0.5) : CGColor(gray: 1, alpha: 0.07))
+            context.fill(CGRect(x: cx - length / 2, y: y, width: length, height: 0.8 + (y - shore) / 160))
+        }
+
+        return Landscape(image: context.makeImage()!, scale: scale, points: [
+            "summit": summit, "cabin": CGPoint(x: cabin.midX, y: cabin.midY - 6),
+        ])
     }
 
     // MARK: - Editor
 
     @MainActor
-    static func makeEditorImage(capture: PageCapture) async throws -> NSBitmapImageRep {
-        let pixelsPerPoint = CGFloat(capture.image.width) / capture.width
-        let screenshot = Screenshot(image: capture.image, scale: pixelsPerPoint)
+    static func makeEditorImage(capture: Landscape) async throws -> NSBitmapImageRep {
+        let screenshot = Screenshot(image: capture.image, scale: capture.scale)
         let model = EditorModel(screenshot: screenshot)
-        let px: (CGFloat) -> CGFloat = { $0 * pixelsPerPoint } // CSS points → capture pixels
+        let px: (CGPoint) -> CGPoint = { CGPoint(x: $0.x * capture.scale, y: $0.y * capture.scale) } // points → capture pixels
         let red = RGBAColor(hex: 0xFF3B30)
 
-        let download = capture.rects["download"]!
-        let tagline = capture.rects["tagline"]!
-        let feature = capture.rects["firstFeature"]!
-        let features = capture.rects["features"]!
-        let meta = capture.rects["meta"]!
+        let summit = capture.points["summit"]!
+        let cabin = capture.points["cabin"]!
 
         // Colour/size changes apply to the selected annotation, so deselect before each change.
         func style(_ color: RGBAColor, size: Double) {
@@ -80,34 +239,24 @@ enum MakeScreenshot {
             model.setAnnotationSize(size, checkpoint: false)
         }
 
-        style(RGBAColor(hex: 0xFFCC00), size: 5)
-        model.addAnnotation(model.newAnnotation(.highlighter, points: [
-            CGPoint(x: px(tagline.minX + 150), y: px(tagline.minY + 13)),
-            CGPoint(x: px(tagline.maxX - 150), y: px(tagline.minY + 13)),
-        ]))
-
-        style(red, size: 4)
-        var label = model.newAnnotation(.text, points: [CGPoint(x: px(download.maxX + 110), y: px(download.minY - 58))])
-        label.text = "One click!"
+        style(RGBAColor(hex: 0xFFFFFF), size: 4)
+        var label = model.newAnnotation(.text, points: [px(CGPoint(x: summit.x + 120, y: summit.y - 40))])
+        label.text = "We’re going up there"
         model.addAnnotation(label)
+        style(red, size: 4)
         model.addAnnotation(model.newAnnotation(.arrow, points: [
-            CGPoint(x: px(download.maxX + 140), y: px(download.minY - 14)),
-            CGPoint(x: px(download.maxX + 14), y: px(download.midY)),
+            px(CGPoint(x: summit.x + 150, y: summit.y + 4)),
+            px(CGPoint(x: summit.x + 16, y: summit.y + 6)),
         ]))
-        model.addAnnotation(model.newAnnotation(.rectangle, points: [
-            CGPoint(x: px(feature.minX - 10), y: px(feature.minY - 8)),
-            CGPoint(x: px(feature.maxX + 10), y: px(feature.maxY + 8)),
-        ]))
-        model.addAnnotation(model.newAnnotation(.pixelate, points: [
-            CGPoint(x: px(meta.minX + 40), y: px(meta.minY - 3)),
-            CGPoint(x: px(meta.maxX - 40), y: px(meta.maxY + 3)),
+        model.addAnnotation(model.newAnnotation(.ellipse, points: [
+            px(CGPoint(x: cabin.x - 50, y: cabin.y - 42)), px(CGPoint(x: cabin.x + 50, y: cabin.y + 34)),
         ]))
         style(RGBAColor(hex: 0x007AFF), size: 4)
-        model.addAnnotation(model.newAnnotation(.step, points: [CGPoint(x: px(download.minX - 34), y: px(download.midY))]))
-        model.addAnnotation(model.newAnnotation(.step, points: [CGPoint(x: px(features.minX - 30), y: px(features.midY))]))
+        model.addAnnotation(model.newAnnotation(.step, points: [px(CGPoint(x: cabin.x - 66, y: cabin.y - 40))]))
+        model.addAnnotation(model.newAnnotation(.step, points: [px(CGPoint(x: summit.x - 40, y: summit.y - 34))]))
 
         model.state.backdrop.enabled = true
-        model.state.backdrop.fill = .gradient(id: "sky")
+        model.state.backdrop.fill = .gradient(id: "dusk")
         model.state.backdrop.padding = 48
         model.state.backdrop.cornerRadius = 12
         model.tool = .arrow

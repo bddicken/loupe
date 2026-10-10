@@ -10,7 +10,7 @@ mkdir -p "$OUT"
 # Everything except the app shell (App/), which pulls in Sparkle and @main.
 SOURCES=(${(f)"$(find Sources/Loupe -name '*.swift' -not -path '*/App/*')"})
 swiftc -parse-as-library -O -o "$OUT/make-screenshot" scripts/screenshot/main.swift "${SOURCES[@]}" \
-  -framework WebKit -framework ScreenCaptureKit -framework Carbon
+  -framework ScreenCaptureKit -framework Carbon
 "$OUT/make-screenshot" "$ROOT/site/editor.png"
 
 # Keep the page light: 1800px is plenty for a 1040pt-wide slot at 2x.
