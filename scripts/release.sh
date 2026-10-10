@@ -105,7 +105,7 @@ WEB="$ROOT/web"
 rm -rf "$WEB"
 mkdir -p "$WEB"
 sips -Z 512 "$ROOT/Resources/AppIcon.png" --out "$WEB/icon.png" >/dev/null
-cp "$ROOT/site/og-image.png" "$ROOT/site/editor.png" "$WEB/"
+cp "$ROOT/site/og-image.png" "$ROOT/site/editor.png" "$ROOT/site/robots.txt" "$WEB/"
 
 export PAGE_URL="$DMG_URL" PAGE_VERSION="$VERSION"
 if (( NOTARIZED )); then
