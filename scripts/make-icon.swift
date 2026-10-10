@@ -58,7 +58,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     ctx.addPath(bodyPath)
     ctx.clip()
     ctx.drawLinearGradient(
-        gradient([rgb(0.90, 0.90, 0.91), rgb(0.78, 0.78, 0.80)]),
+        gradient([rgb(0.97, 0.97, 0.975), rgb(0.92, 0.92, 0.93)]),
         start: CGPoint(x: 300, y: body.maxY), end: CGPoint(x: 724, y: body.minY),
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
@@ -84,7 +84,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
 
     // MARK: Lens arm (polished metal)
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -16), blur: 34, color: CGColor(gray: 0, alpha: 0.5))
+    ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 22, color: CGColor(gray: 0, alpha: 0.22))
     ctx.addPath(armPath)
     ctx.setFillColor(rgb(0.7, 0.72, 0.76))
     ctx.fillPath()
@@ -164,7 +164,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
 
     // MARK: Cover (dark outer case, on top of the lens arm)
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 30, color: CGColor(gray: 0, alpha: 0.45))
+    ctx.setShadow(offset: CGSize(width: 0, height: -7), blur: 20, color: CGColor(gray: 0, alpha: 0.2))
     ctx.addPath(casePath)
     ctx.setFillColor(rgb(0.13, 0.13, 0.17))
     ctx.fillPath()
