@@ -55,7 +55,7 @@ scripts/release.sh 1.0.1
 On an up-to-date, clean `main`, this builds and signs `dist/Loupe-1.0.1.dmg`, signs it for Sparkle
 updates, publishes GitHub Release `v1.0.1` with the DMG, writes the site into `web/` (page,
 `appcast.xml`, `vercel.json`) and pushes. The Vercel project deploys `web/` to
-[loupe.pics](https://loupe.pics) whenever a push changes it, and installed copies update from
+[loupe.pics](https://loupe.pics) on every push to `main`, and installed copies update from
 `loupe.pics/appcast.xml`. Release notes come from `release-notes/<version>.html`. Use
 `--no-publish` to build and preview without publishing; `scripts/deploy-site.sh` redeploys `web/`
 manually. With a Developer ID certificate and a `loupe-notary` notarytool profile, releases are
