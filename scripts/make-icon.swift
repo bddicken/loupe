@@ -58,13 +58,13 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     ctx.addPath(bodyPath)
     ctx.clip()
     ctx.drawLinearGradient(
-        gradient([rgb(0.92, 0.92, 0.93), rgb(0.68, 0.68, 0.70)]),
+        gradient([rgb(0.90, 0.90, 0.91), rgb(0.78, 0.78, 0.80)]),
         start: CGPoint(x: 300, y: body.maxY), end: CGPoint(x: 724, y: body.minY),
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
     // Gentle light from the top-left.
     ctx.drawRadialGradient(
-        gradient([CGColor(gray: 1, alpha: 0.18), CGColor(gray: 1, alpha: 0)]),
+        gradient([CGColor(gray: 1, alpha: 0.10), CGColor(gray: 1, alpha: 0)]),
         startCenter: CGPoint(x: 330, y: 820), startRadius: 0,
         endCenter: CGPoint(x: 330, y: 820), endRadius: 620, options: []
     )
