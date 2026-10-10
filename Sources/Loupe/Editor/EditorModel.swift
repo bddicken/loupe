@@ -90,10 +90,20 @@ final class EditorModel: ObservableObject {
                 loadBackgroundImageIfNeeded()
                 state.backdrop.saveAsLastUsed()
             }
-            scheduleRender()
+            // The editor draws the background live (see EditorView), so background-only
+            // changes need no re-render: they're instant and stay in step with drawings.
+            var contentState = state
+            contentState.backdrop = oldValue.backdrop
+            if contentState != oldValue { scheduleRender() }
         }
     }
+    /// The edited image without its background (the editor draws that live).
     @Published private(set) var preview: CGImage?
+    /// The state `preview` was rendered from. Drawings are positioned with it, so
+    /// they move in the same frame as the image when a rotate or crop lands.
+    @Published private(set) var previewState = EditState()
+    /// The left-hand background options panel.
+    @Published var showsBackgroundPanel = false
     /// Preview pixels per `previewSource` pixel: below 1 when a crop reaching far
     /// past the image was shrunk to keep the preview a manageable size.
     @Published private(set) var previewShrink: CGFloat = 1
@@ -112,7 +122,7 @@ final class EditorModel: ObservableObject {
     /// Offset of the zoomed image from the canvas center, in view points.
     @Published private(set) var pan: CGSize = .zero
     /// Last laid-out canvas size and fitted image size, for clamping pan and menu zooms.
-    private var zoomViewport: (canvas: CGSize, fit: CGSize) = (.zero, .zero)
+    private var zoomViewport: (canvas: CGSize, fit: CGSize, scale: CGFloat) = (.zero, .zero, 1)
     static let zoomRange: ClosedRange<CGFloat> = 1...12
     @Published var cropAspect: CropAspect = .free {
         didSet { applyAspectToPendingCrop() }
@@ -278,6 +288,20 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    /// The background image, if the background uses one (already loaded and downsampled).
+    var backgroundImage: CGImage? { currentBackgroundImage }
+
+    /// Turns the background on (with the last-used look) and opens its options.
+    func addBackground() {
+        updateBackdrop { $0.enabled = true }
+        showsBackgroundPanel = true
+    }
+
+    func removeBackground() {
+        updateBackdrop { $0.enabled = false }
+        showsBackgroundPanel = false
+    }
+
     private var currentBackgroundImage: CGImage? {
         guard case let .image(path) = state.backdrop.fill else { return nil }
         return backgroundImages[path]
@@ -366,8 +390,9 @@ final class EditorModel: ObservableObject {
     // MARK: - Zoom
 
     /// Records the canvas geometry from the view (not published; read for clamping).
-    func updateZoomViewport(canvas: CGSize, fit: CGSize) {
-        zoomViewport = (canvas, fit)
+    /// - fit: the fitted (zoom 1) size of everything shown; scale: fitted points per image point.
+    func updateZoomViewport(canvas: CGSize, fit: CGSize, scale: CGFloat) {
+        zoomViewport = (canvas, fit, scale)
     }
 
     /// Zooms by `factor`, keeping `anchor` (view points from the canvas center) fixed.
@@ -400,19 +425,12 @@ final class EditorModel: ObservableObject {
 
     var zoomPercent: Int {
         // Relative to the image's natural (point) size, like Preview.
-        let fitScale = zoomViewport.fit.width / max(naturalDisplayWidth, 1)
-        return Int((fitScale * zoom * 100).rounded())
-    }
-
-    /// Width in points of the current preview at 100%.
-    private var naturalDisplayWidth: CGFloat {
-        guard let preview else { return 0 }
-        return CGFloat(preview.width) / (previewScale * previewShrink * screenshot.scale)
+        Int((zoomViewport.scale * zoom * 100).rounded())
     }
 
     /// Keeps at least part of the image on screen.
     private func clampedPan(_ pan: CGSize) -> CGSize {
-        let (canvas, fit) = zoomViewport
+        let (canvas, fit, _) = zoomViewport
         let maxX = max(0, (fit.width * zoom - canvas.width) / 2 + 60)
         let maxY = max(0, (fit.height * zoom - canvas.height) / 2 + 60)
         guard zoom > 1 else { return .zero }
@@ -463,7 +481,6 @@ final class EditorModel: ObservableObject {
         let source = previewSource
         let colorSpace = self.colorSpace
         let latest = latestRender
-        let backgroundImage = currentBackgroundImage
         let pixelsPerPoint = screenshot.scale * previewScale
         let previewScale = self.previewScale
         // The live canvas draws vector annotations on top of the preview,
@@ -487,13 +504,11 @@ final class EditorModel: ObservableObject {
             let largest = max(output.extent.width, output.extent.height)
             let shrink = largest > maxDimension ? maxDimension / largest : 1
             let shrunk = shrink < 1 ? output.transformed(by: CGAffineTransform(scaleX: shrink, y: shrink)) : output
-            var image = Self.context.createCGImage(shrunk, from: shrunk.extent.integral, format: .RGBA8, colorSpace: colorSpace)
-            if !isCropping, let content = image {
-                image = state.backdrop.compose(content, pixelsPerPoint: pixelsPerPoint * shrink, backgroundImage: backgroundImage)
-            }
+            let image = Self.context.createCGImage(shrunk, from: shrunk.extent.integral, format: .RGBA8, colorSpace: colorSpace)
             DispatchQueue.main.async { [weak self] in
                 guard let self, latest.isCurrent(token) else { return }
                 self.preview = image
+                self.previewState = state
                 self.previewShrink = shrink
                 if let crop, isCropping { self.previewCropCanvas = crop }
             }
@@ -734,6 +749,22 @@ final class EditorModel: ObservableObject {
     /// Maps source pixels (top-left origin) to full-resolution canvas pixels
     /// (top-left origin): orientation, then crop, then backdrop padding.
     /// Also returns the canvas size and where the screenshot sits in it.
+    /// Maps source pixels (top-left origin) to the edited image's pixels (after
+    /// orientation and crop, before the background), for `state`.
+    func sourceToContent(for state: EditState) -> (transform: CGAffineTransform, size: CGSize) {
+        let source = CGSize(width: screenshot.image.width, height: screenshot.image.height)
+        var (transform, oriented) = Self.orientationTransform(size: source, orientation: state.orientation)
+        var size = oriented
+        if let crop = state.crop {
+            transform = transform.concatenating(CGAffineTransform(
+                translationX: -(crop.minX * oriented.width).rounded(),
+                y: -(crop.minY * oriented.height).rounded()
+            ))
+            size = CGSize(width: (crop.width * oriented.width).rounded(), height: (crop.height * oriented.height).rounded())
+        }
+        return (transform, size)
+    }
+
     func sourceToCanvas() -> (transform: CGAffineTransform, canvasSize: CGSize, contentRect: CGRect) {
         let source = CGSize(width: screenshot.image.width, height: screenshot.image.height)
         var (transform, oriented) = Self.orientationTransform(size: source, orientation: state.orientation)

@@ -3,8 +3,16 @@ import SwiftUI
 struct EditorView: View {
     @ObservedObject var model: EditorModel
 
+    static let backgroundPanelWidth: CGFloat = 260
+
     var body: some View {
         HStack(spacing: 0) {
+            if model.showsBackgroundPanel {
+                BackgroundPanel(model: model)
+                    .frame(width: EditorView.backgroundPanelWidth)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                Divider()
+            }
             VStack(spacing: 0) {
                 AnnotationToolbar(model: model)
                 Divider()
@@ -19,7 +27,8 @@ struct EditorView: View {
                 .frame(width: 260)
                 .layoutPriority(1)
         }
-        .frame(minWidth: 900, minHeight: 500)
+        .animation(.easeInOut(duration: 0.2), value: model.showsBackgroundPanel)
+        .frame(minWidth: model.showsBackgroundPanel ? 900 + EditorView.backgroundPanelWidth : 900, minHeight: 500)
     }
 
     // MARK: - Canvas
@@ -32,29 +41,27 @@ struct EditorView: View {
                 CanvasGestureCatcher(model: model)
 
                 if let preview = model.preview {
-                    let fit = fitSize(for: preview, in: geometry.size)
-                    let _ = model.updateZoomViewport(canvas: geometry.size, fit: fit)
+                    let layout = canvasLayout(for: preview, in: geometry.size)
+                    let _ = model.updateZoomViewport(canvas: geometry.size, fit: layout.fit, scale: layout.scale)
                     let zoom = model.isCropping ? 1 : model.zoom
-                    let size = CGSize(width: (fit.width * zoom).rounded(), height: (fit.height * zoom).rounded())
-                    ZStack(alignment: .topLeading) {
+                    let size = CGSize(width: (layout.fit.width * zoom).rounded(), height: (layout.fit.height * zoom).rounded())
+                    Group {
                         if model.isCropping {
-                            cropPreview(preview, size: size)
-                            CropOverlay(
-                                rect: $model.pendingCrop,
-                                aspect: model.normalizedAspect,
-                                bounds: model.cropCanvas,
-                                size: size,
-                                onDragEnded: model.refitCropCanvas
-                            )
+                            ZStack(alignment: .topLeading) {
+                                cropPreview(preview, size: size)
+                                CropOverlay(
+                                    rect: $model.pendingCrop,
+                                    aspect: model.normalizedAspect,
+                                    bounds: model.cropCanvas,
+                                    size: size,
+                                    onDragEnded: model.refitCropCanvas
+                                )
+                            }
+                            .frame(width: size.width, height: size.height)
                         } else {
-                            Image(decorative: preview, scale: 1)
-                                .resizable()
-                                .interpolation(.high)
-                                .frame(width: size.width, height: size.height)
-                            annotationCanvas(displaySize: size)
+                            editedImage(preview, size: size, scale: layout.scale * zoom)
                         }
                     }
-                    .frame(width: size.width, height: size.height)
                     .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
                     .offset(model.isCropping ? .zero : model.pan)
                 }
@@ -98,41 +105,82 @@ struct EditorView: View {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    private func annotationCanvas(displaySize: CGSize) -> some View {
-        let geometry = model.sourceToCanvas()
-        let scale = displaySize.width / max(geometry.canvasSize.width, 1)
-        let toView = CGAffineTransform(scaleX: scale, y: scale)
-        return AnnotationCanvas(
-            model: model,
-            transform: geometry.transform.concatenating(toView),
-            contentRect: geometry.contentRect.applying(toView)
-        )
-        .frame(width: displaySize.width, height: displaySize.height)
+    /// The edited image with its background drawn live: the gradient, padding,
+    /// rounded corners and shadow are view layers, so dragging a background slider
+    /// is instant and the image, background and drawings always move together.
+    /// (Export renders the same look at full resolution with Backdrop.compose.)
+    private func editedImage(_ preview: CGImage, size: CGSize, scale: CGFloat) -> some View {
+        let content = contentNaturalSize(of: preview)
+        let contentSize = CGSize(width: (content.width * scale).rounded(), height: (content.height * scale).rounded())
+        let backdrop = model.state.backdrop
+        let radius = backdrop.enabled ? min(backdrop.cornerRadius * scale, min(contentSize.width, contentSize.height) / 2) : 0
+        return ZStack {
+            if backdrop.enabled {
+                BackdropFillView(fill: backdrop.fill, image: model.backgroundImage)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+            }
+            Image(decorative: preview, scale: 1)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: contentSize.width, height: contentSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: radius, style: .circular))
+                .shadow(
+                    color: .black.opacity(backdrop.enabled ? backdrop.shadowOpacity : 0),
+                    // Core Graphics' shadow blur is roughly twice SwiftUI's radius.
+                    radius: backdrop.enabled ? backdrop.shadowBlur * scale / 2 : 0,
+                    x: 0,
+                    y: backdrop.enabled ? backdrop.shadowOffset * scale : 0
+                )
+            annotationCanvas(contentSize: contentSize)
+        }
+        .frame(width: size.width, height: size.height)
     }
 
-    /// Fit the image in the canvas, but never enlarge past its natural (point) size.
-    /// While cropping, the visible crop canvas is fitted instead (it doesn't depend
-    /// on the async preview, so the layout stays still while renders land).
-    private func fitSize(for preview: CGImage, in available: CGSize) -> CGSize {
+    /// Drawings over the image. Positioned with the state the preview was rendered
+    /// from, so after a rotate or crop they move in the same frame as the image.
+    private func annotationCanvas(contentSize: CGSize) -> some View {
+        let mapping = model.sourceToContent(for: model.previewState)
+        let scale = contentSize.width / max(mapping.size.width, 1)
+        // A margin keeps selection handles on the image's edges fully visible.
+        let margin: CGFloat = 16
+        let toView = CGAffineTransform(scaleX: scale, y: scale).concatenating(CGAffineTransform(translationX: margin, y: margin))
+        return AnnotationCanvas(
+            model: model,
+            transform: mapping.transform.concatenating(toView),
+            contentRect: CGRect(x: margin, y: margin, width: contentSize.width, height: contentSize.height)
+        )
+        .frame(width: contentSize.width + margin * 2, height: contentSize.height + margin * 2)
+    }
+
+    /// The edited image's size in points at 100% (the preview may be downscaled).
+    private func contentNaturalSize(of preview: CGImage) -> CGSize {
+        let pointsPerPreviewPixel = 1 / (model.previewScale * model.previewShrink * model.screenshot.scale)
+        return CGSize(width: CGFloat(preview.width) * pointsPerPreviewPixel, height: CGFloat(preview.height) * pointsPerPreviewPixel)
+    }
+
+    /// Fits what's shown in the canvas (the image plus its background, or while
+    /// cropping, the crop canvas) without enlarging past its natural size.
+    /// Returns the fitted size and the fitted points per image point.
+    private func canvasLayout(for preview: CGImage, in available: CGSize) -> (fit: CGSize, scale: CGFloat) {
         let natural: CGSize
         if model.isCropping {
+            // Independent of the async preview, so the layout stays still while renders land.
             let oriented = model.orientedPixelSize
             natural = CGSize(
                 width: oriented.width * model.cropCanvas.width / model.screenshot.scale,
                 height: oriented.height * model.cropCanvas.height / model.screenshot.scale
             )
         } else {
-            let pointsPerPreviewPixel = 1 / (model.previewScale * model.previewShrink * model.screenshot.scale)
-            natural = CGSize(
-                width: CGFloat(preview.width) * pointsPerPreviewPixel,
-                height: CGFloat(preview.height) * pointsPerPreviewPixel
-            )
+            let content = contentNaturalSize(of: preview)
+            let backdrop = model.state.backdrop
+            natural = backdrop.enabled ? backdrop.canvasSize(forContent: content, pixelsPerPoint: 1) : content
         }
         let inset: CGFloat = 32
         let maxWidth = max(available.width - inset * 2, 50)
         let maxHeight = max(available.height - inset * 2, 50)
         let scale = min(1, maxWidth / natural.width, maxHeight / natural.height)
-        return CGSize(width: (natural.width * scale).rounded(), height: (natural.height * scale).rounded())
+        return (CGSize(width: (natural.width * scale).rounded(), height: (natural.height * scale).rounded()), scale)
     }
 
     // MARK: - Bottom bar
@@ -264,6 +312,8 @@ private struct EditorSidebar: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                backgroundButton
+
                 if !model.state.annotations.isEmpty {
                     LayersSection(model: model)
                 }
@@ -299,14 +349,35 @@ private struct EditorSidebar: View {
                         .disabled(model.state.adjustments == Adjustments())
                 }
 
-                BackdropSection(model: model)
-
                 Button("Revert to Original", role: .destructive, action: model.resetAll)
                     .disabled(model.state.isIdentity)
             }
             .padding(16)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// Adding a background is a headline action: a prominent button that turns it
+    /// on and opens its options in the left panel.
+    @ViewBuilder
+    private var backgroundButton: some View {
+        if model.state.backdrop.enabled {
+            Button {
+                model.showsBackgroundPanel.toggle()
+            } label: {
+                Label(model.showsBackgroundPanel ? "Hide Background Options" : "Edit Background", systemImage: "photo.artframe")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+        } else {
+            Button(action: model.addBackground) {
+                Label("Add Background", systemImage: "photo.artframe")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .help("Put the screenshot on a gradient, color or image, with padding, rounded corners and a shadow")
+        }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -467,28 +538,51 @@ private struct ParameterSlider: View {
 
 // MARK: - Background
 
-private struct BackdropSection: View {
+/// The left-hand panel shown while adding or editing a background.
+private struct BackgroundPanel: View {
     @ObservedObject var model: EditorModel
 
     private var backdrop: Backdrop { model.state.backdrop }
     private let swatchColumns = Array(repeating: GridItem(.fixed(30), spacing: 8), count: 6)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             HStack {
-                Text("Background")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                Label("Background", systemImage: "photo.artframe")
+                    .font(.headline)
                 Spacer()
-                Toggle("Background", isOn: Binding(
-                    get: { backdrop.enabled },
-                    set: { enabled in model.updateBackdrop { $0.enabled = enabled } }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
+                Button {
+                    model.showsBackgroundPanel = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help("Close")
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            Divider()
+            ScrollView {
+                options
+                    .padding(16)
+            }
+            Divider()
+            Button(role: .destructive, action: model.removeBackground) {
+                Label("Remove Background", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .padding(12)
+            .disabled(!backdrop.enabled)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
 
+    private var options: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if backdrop.enabled {
                 LazyVGrid(columns: swatchColumns, alignment: .leading, spacing: 8) {
                     Swatch(isSelected: backdrop.fill == .transparent, help: "Transparent") {
@@ -707,5 +801,33 @@ private final class CanvasGestureView: NSView {
             return event
         }
         return nil
+    }
+}
+
+/// Draws a background fill like Backdrop.compose does: gradient, solid color,
+/// aspect-filled image, or nothing (transparent).
+private struct BackdropFillView: View {
+    let fill: BackdropFill
+    let image: CGImage?
+
+    var body: some View {
+        switch fill {
+        case .transparent:
+            Color.clear
+        case let .solid(color):
+            color.color
+        case let .gradient(id):
+            let preset = GradientPreset.named(id)
+            let points = preset.swiftUIPoints
+            LinearGradient(colors: preset.colors.map(\.color), startPoint: points.start, endPoint: points.end)
+        case .image:
+            if let image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Color.gray
+            }
+        }
     }
 }
