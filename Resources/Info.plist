@@ -34,6 +34,14 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://loupe.pics/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>A7Tbewt/fOHxA+iD6B8jthafQofuGCp+R+fI0HU3jog=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Loupe needs screen recording access to take screenshots.</string>
 </dict>

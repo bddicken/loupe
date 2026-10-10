@@ -36,6 +36,16 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var launchAtLogin = false
     @Published private(set) var loginItemMessage: String?
     @Published private(set) var shortcutsVersion = 0
+    @Published var automaticallyChecksForUpdates = UpdateController.shared.automaticallyChecksForUpdates {
+        didSet { UpdateController.shared.automaticallyChecksForUpdates = automaticallyChecksForUpdates }
+    }
+
+    var versionDescription: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "Loupe \(version) (\(build))"
+    }
 
     private var monitor: Any?
 
@@ -46,6 +56,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func refresh() {
+        automaticallyChecksForUpdates = UpdateController.shared.automaticallyChecksForUpdates
         updateLoginItemStatus()
         shortcutsVersion += 1
     }
@@ -190,6 +201,13 @@ private struct SettingsView: View {
                         Button("Open Login Items…", action: model.openLoginItemsSettings)
                             .controlSize(.small)
                     }
+                }
+            }
+
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $model.automaticallyChecksForUpdates)
+                LabeledContent(model.versionDescription) {
+                    Button("Check Now") { UpdateController.shared.checkForUpdates(nil) }
                 }
             }
 

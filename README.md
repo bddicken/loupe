@@ -6,6 +6,10 @@
 
 <p align="center">A fast, native screenshot tool for macOS: capture, mark up, and polish screenshots in seconds.</p>
 
+<p align="center"><a href="https://loupe.pics"><strong>Download at loupe.pics</strong></a></p>
+
+<p align="center"><img src="site/editor.png" alt="The Loupe editor" width="900"></p>
+
 ## Features
 
 - **Capture** an area, a single window (click it), or the full screen. You can adjust the selection before
@@ -53,7 +57,8 @@ Builds `dist/Loupe-0.2.0.dmg` and `dist/site/`, a ready-to-upload landing page w
 Developer ID certificate and a `loupe-notary` notarytool profile are available, the DMG is also signed,
 notarized and stapled. See the comments in [scripts/release.sh](scripts/release.sh).
 `swift scripts/make-icon.swift Resources/AppIcon.icns` regenerates the icon, and
-`swift scripts/make-og-image.swift` regenerates the social preview image (`site/og-image.png`).
+`swift scripts/make-og-image.swift` regenerates the social preview image (`site/og-image.png`), and
+`scripts/make-screenshot.sh` re-renders the editor screenshot (`site/editor.png`) from the real UI.
 
 ## Project layout
 

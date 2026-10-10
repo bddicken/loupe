@@ -7,7 +7,8 @@
 # signature. Ad-hoc signatures change on every build, which makes macOS ask
 # for permission again after each rebuild. To avoid that, the script signs
 # with a stable identity: $LOUPE_SIGN_IDENTITY if set, otherwise a
-# "Developer ID Application" identity, otherwise the first valid codesigning
+# "Developer ID Application" identity, otherwise "Loupe Code Signing" (see
+# scripts/create-signing-cert.sh), otherwise the first valid codesigning
 # identity in the keychain, otherwise ad-hoc. Developer ID builds get the
 # hardened runtime and a secure timestamp, which notarization requires.
 #
@@ -29,8 +30,12 @@ BIN_DIR="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --show-bin-path)"
 
 APP="$ROOT/build/Loupe.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN_DIR/Loupe" "$APP/Contents/MacOS/Loupe"
+# Sparkle (auto-updates). Loupe isn't sandboxed, so Sparkle's optional XPC services aren't needed.
+ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" \
+       "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
@@ -45,6 +50,9 @@ IDENTITY="${LOUPE_SIGN_IDENTITY:-}"
 if [[ -z "$IDENTITY" ]]; then
   IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
 fi
+if [[ -z "$IDENTITY" ]] && security find-identity -v -p codesigning 2>/dev/null | grep -q '"Loupe Code Signing"'; then
+  IDENTITY="Loupe Code Signing"
+fi
 if [[ -z "$IDENTITY" ]]; then
   IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/^ +[0-9]+\)/ {print $2; exit}')"
 fi
@@ -52,9 +60,15 @@ if [[ -z "$IDENTITY" ]]; then
   IDENTITY="-"
 fi
 
-SIGN_FLAGS=(--force --sign "$IDENTITY" --identifier dev.loupe.Loupe)
+SIGN_FLAGS=(--force --sign "$IDENTITY")
 if [[ "$IDENTITY" == *"Developer ID Application"* ]]; then
   SIGN_FLAGS+=(--options runtime --timestamp)
 fi
-codesign "${SIGN_FLAGS[@]}" "$APP"
+# Sign inside-out: Sparkle's helpers, then the framework, then the app.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Autoupdate"
+codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Updater.app"
+codesign "${SIGN_FLAGS[@]}" "$SPARKLE"
+codesign "${SIGN_FLAGS[@]}" --identifier dev.loupe.Loupe "$APP"
+codesign --verify --deep --strict "$APP"
 echo "Built $APP (signed with: $IDENTITY)"
