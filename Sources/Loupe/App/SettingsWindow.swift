@@ -1,41 +1,197 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 @MainActor
 enum SettingsWindowController {
     private static var window: NSWindow?
+    private static let model = SettingsModel()
 
     static func show() {
         if window == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 460, height: 400),
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
             )
             window.title = "Loupe Settings"
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView())
+            window.contentView = NSHostingView(rootView: SettingsView(model: model))
             window.center()
             self.window = window
         }
+        model.refresh()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
 }
 
+/// State that SwiftUI's @State would normally hold (its macro plugin ships
+/// only with Xcode), plus shortcut recording and the login item.
+@MainActor
+final class SettingsModel: ObservableObject {
+    @Published var saveDirectory = Preferences.saveDirectory
+    @Published private(set) var recording: Shortcut?
+    @Published private(set) var launchAtLogin = false
+    @Published private(set) var loginItemMessage: String?
+    @Published private(set) var shortcutsVersion = 0
+
+    private var monitor: Any?
+
+    init() {
+        NotificationCenter.default.addObserver(forName: ShortcutCenter.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shortcutsVersion += 1 }
+        }
+    }
+
+    func refresh() {
+        updateLoginItemStatus()
+        shortcutsVersion += 1
+    }
+
+    // MARK: Folder
+
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = saveDirectory
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Preferences.saveDirectory = url
+        saveDirectory = url
+    }
+
+    // MARK: Shortcuts
+
+    func binding(for shortcut: Shortcut) -> KeyBinding? {
+        ShortcutCenter.shared.binding(for: shortcut)
+    }
+
+    func isUnavailable(_ shortcut: Shortcut) -> Bool {
+        ShortcutCenter.shared.unavailable.contains(shortcut)
+    }
+
+    func toggleRecording(_ shortcut: Shortcut) {
+        if recording == shortcut {
+            stopRecording()
+        } else {
+            startRecording(shortcut)
+        }
+    }
+
+    private func startRecording(_ shortcut: Shortcut) {
+        stopRecording()
+        recording = shortcut
+        ShortcutCenter.shared.suspend()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.record(event) }
+            return nil
+        }
+    }
+
+    func stopRecording() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        guard recording != nil else { return }
+        recording = nil
+        ShortcutCenter.shared.apply()
+    }
+
+    private func record(_ event: NSEvent) {
+        guard let shortcut = recording else { return }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        switch Int(event.keyCode) {
+        case 53 where modifiers.isEmpty: // Esc cancels
+            stopRecording()
+            return
+        case 51 where modifiers.isEmpty, 117 where modifiers.isEmpty: // Delete clears
+            ShortcutCenter.shared.setBinding(nil, for: shortcut)
+            stopRecording()
+            return
+        default:
+            break
+        }
+        let binding = KeyBinding(event: event)
+        // Plain letters would fire while typing; require ⌘, ⌥ or ⌃ (F-keys are fine alone).
+        guard !modifiers.intersection([.command, .option, .control]).isEmpty || binding.isFunctionKey else {
+            NSSound.beep()
+            return
+        }
+        ShortcutCenter.shared.setBinding(binding, for: shortcut)
+        stopRecording()
+    }
+
+    func resetShortcut(_ shortcut: Shortcut) {
+        stopRecording()
+        ShortcutCenter.shared.resetToDefault(shortcut)
+    }
+
+    // MARK: Launch at login
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            loginItemMessage = nil
+        } catch {
+            loginItemMessage = error.localizedDescription
+        }
+        updateLoginItemStatus()
+    }
+
+    private func updateLoginItemStatus() {
+        let status = SMAppService.mainApp.status
+        launchAtLogin = status == .enabled || status == .requiresApproval
+        if status == .requiresApproval {
+            loginItemMessage = "Allow Loupe in System Settings → General → Login Items."
+        }
+    }
+
+    func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
+    func openKeyboardShortcutSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
 private struct SettingsView: View {
+    @ObservedObject var model: SettingsModel
+
     @AppStorage(Preferences.Key.autoSave) private var autoSave = true
     @AppStorage(Preferences.Key.copyToClipboard) private var copyToClipboard = false
     @AppStorage(Preferences.Key.showQuickAccess) private var showQuickAccess = true
     @AppStorage(Preferences.Key.playSound) private var playSound = true
     @AppStorage(Preferences.Key.imageFormat) private var imageFormat = ImageFormat.png.rawValue
-    // `State` is used directly: the @State macro plugin ships only with Xcode.
-    private let saveDirectoryState = State(initialValue: Preferences.saveDirectory)
-    private var saveDirectory: URL { saveDirectoryState.wrappedValue }
 
     var body: some View {
         Form {
+            Section("General") {
+                Toggle("Launch Loupe at login", isOn: Binding(
+                    get: { model.launchAtLogin },
+                    set: { model.setLaunchAtLogin($0) }
+                ))
+                if let message = model.loginItemMessage {
+                    HStack {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open Login Items…", action: model.openLoginItemsSettings)
+                            .controlSize(.small)
+                    }
+                }
+            }
+
             Section("After capture") {
                 Toggle("Save to folder automatically", isOn: $autoSave)
                 Toggle("Copy to clipboard", isOn: $copyToClipboard)
@@ -46,11 +202,11 @@ private struct SettingsView: View {
             Section("Saving") {
                 LabeledContent("Folder") {
                     HStack {
-                        Text(saveDirectory.path(percentEncoded: false).replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        Text(model.saveDirectory.path(percentEncoded: false).replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .foregroundStyle(.secondary)
-                        Button("Choose…", action: chooseFolder)
+                        Button("Choose…", action: model.chooseFolder)
                     }
                 }
                 Picker("Format", selection: $imageFormat) {
@@ -60,29 +216,63 @@ private struct SettingsView: View {
                 }
             }
 
-            Section("Shortcuts") {
+            Section {
                 ForEach(Shortcut.allCases, id: \.self) { shortcut in
-                    LabeledContent(shortcut.title, value: shortcut.displayString)
+                    shortcutRow(shortcut)
                 }
-                Text("In the capture overlay: drag to select, hold ⇧ for a square, Esc or right-click to cancel. In adjust mode, move/resize the selection, use arrow keys to nudge, then press Return or double-click to capture.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Shortcuts")
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Click a shortcut and press a new key combination. Esc cancels, Delete removes it. To use ⌘⇧3, ⌘⇧4 or ⌘⇧5, first turn off the macOS screenshot shortcuts.")
+                    Button("Open Keyboard Shortcuts…", action: model.openKeyboardShortcutSettings)
+                        .controlSize(.small)
+                    Text("In the capture overlay: drag to select, or click a window to capture just that window. Hold ⇧ for a square, Esc or right-click to cancel. In adjust mode, move/resize the selection, nudge with arrow keys, then press Return or double-click.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
+        .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
+        .onDisappear { model.stopRecording() }
     }
 
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.directoryURL = saveDirectory
-        panel.prompt = "Choose"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Preferences.saveDirectory = url
-        saveDirectoryState.wrappedValue = url
+    private func shortcutRow(_ shortcut: Shortcut) -> some View {
+        // Reading the version re-renders rows when bindings change.
+        let _ = model.shortcutsVersion
+        let binding = model.binding(for: shortcut)
+        let isRecording = model.recording == shortcut
+
+        return LabeledContent {
+            HStack(spacing: 6) {
+                if model.isUnavailable(shortcut), !isRecording {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help("Another app is already using this shortcut")
+                }
+                Button {
+                    model.toggleRecording(shortcut)
+                } label: {
+                    Text(isRecording ? "Type shortcut…" : (binding?.displayString ?? "None"))
+                        .monospacedDigit()
+                        .frame(minWidth: 110)
+                }
+                .tint(isRecording ? .accentColor : nil)
+                .buttonStyle(.bordered)
+
+                Button {
+                    model.resetShortcut(shortcut)
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Reset to \(shortcut.defaultBinding.displayString)")
+                .disabled(binding == shortcut.defaultBinding)
+            }
+        } label: {
+            Text(shortcut.title)
+        }
     }
 }

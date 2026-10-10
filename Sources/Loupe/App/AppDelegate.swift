@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -9,7 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Preferences.registerDefaults()
         NSApp.mainMenu = MainMenu.build()
         setUpStatusItem()
-        registerHotKeys()
+        ShortcutCenter.shared.apply()
+        NotificationCenter.default.addObserver(forName: ShortcutCenter.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rebuildStatusMenu() }
+        }
 
         // `Loupe --edit <image>…` opens images straight in the editor (handy for development).
         let arguments = CommandLine.arguments
@@ -36,11 +38,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Loupe")
         }
+        rebuildStatusMenu()
+    }
 
+    private func rebuildStatusMenu() {
         let menu = NSMenu()
         for shortcut in Shortcut.allCases {
-            let item = NSMenuItem(title: shortcut.title, action: #selector(runShortcut(_:)), keyEquivalent: shortcut.keyEquivalent)
-            item.keyEquivalentModifierMask = shortcut.modifierFlags
+            let binding = ShortcutCenter.shared.binding(for: shortcut)
+            let item = NSMenuItem(title: shortcut.title, action: #selector(runShortcut(_:)), keyEquivalent: binding?.menuKeyEquivalent ?? "")
+            item.keyEquivalentModifierMask = binding?.modifierFlags ?? []
             item.tag = shortcut.rawValue
             item.target = self
             menu.addItem(item)
@@ -89,64 +95,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         SettingsWindowController.show()
-    }
-
-    // MARK: - Hot keys
-
-    private func registerHotKeys() {
-        var failed: [String] = []
-        for shortcut in Shortcut.allCases {
-            let ok = HotKeyManager.shared.register(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers) {
-                shortcut.perform()
-            }
-            if !ok { failed.append(shortcut.displayString) }
-        }
-        if !failed.isEmpty {
-            NSLog("Loupe: could not register hot keys: \(failed.joined(separator: ", "))")
-        }
-    }
-}
-
-/// Global capture shortcuts. Defaults avoid the system's ⌘⇧3/4/5.
-enum Shortcut: Int, CaseIterable {
-    case area = 1
-    case adjustableArea
-    case fullscreen
-
-    var title: String {
-        switch self {
-        case .area: "Capture Area"
-        case .adjustableArea: "Capture Area (Adjust, then Capture)"
-        case .fullscreen: "Capture Fullscreen"
-        }
-    }
-
-    var keyCode: UInt32 {
-        switch self {
-        case .area: UInt32(kVK_ANSI_4)
-        case .adjustableArea: UInt32(kVK_ANSI_5)
-        case .fullscreen: UInt32(kVK_ANSI_3)
-        }
-    }
-
-    var keyEquivalent: String {
-        switch self {
-        case .area: "4"
-        case .adjustableArea: "5"
-        case .fullscreen: "3"
-        }
-    }
-
-    var carbonModifiers: UInt32 { UInt32(optionKey | shiftKey) }
-    var modifierFlags: NSEvent.ModifierFlags { [.option, .shift] }
-    var displayString: String { "⌥⇧\(keyEquivalent)" }
-
-    @MainActor
-    func perform() {
-        switch self {
-        case .area: CaptureController.shared.captureArea(mode: .quick)
-        case .adjustableArea: CaptureController.shared.captureArea(mode: .adjustable)
-        case .fullscreen: CaptureController.shared.captureFullscreen()
-        }
     }
 }

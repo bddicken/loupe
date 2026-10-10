@@ -22,6 +22,9 @@ final class SelectionView: NSView {
     private var dragState: DragState = .none
     private var mouseLocation: NSPoint?
     private let buttonBar: NSStackView
+    /// Windows on this display in view coordinates, frontmost first.
+    private let windows: [(info: WindowInfo, frame: NSRect)]
+    private var hoveredWindow: (info: WindowInfo, frame: NSRect)?
 
     private let handleRadius: CGFloat = 4.5
     private let handleHitSlop: CGFloat = 8
@@ -32,6 +35,11 @@ final class SelectionView: NSView {
         self.snapshot = snapshot
         self.session = session
         mode = session.mode
+        let screenFrame = snapshot.screen.frame
+        windows = session.windows.compactMap { info in
+            let frame = info.frame.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
+            return frame.intersects(NSRect(origin: .zero, size: screenFrame.size)) ? (info, frame) : nil
+        }
 
         let cancel = NSButton(title: "Cancel", target: nil, action: nil)
         let capture = NSButton(title: "Capture", target: nil, action: nil)
@@ -153,6 +161,19 @@ final class SelectionView: NSView {
         dragState = .none
 
         if let selection, selection.width < minimumSize || selection.height < minimumSize {
+            // A click (no drag) picks the window under the cursor.
+            let point = convert(event.locationInWindow, from: nil)
+            if wasCreating, let window = window(at: point) {
+                if mode == .quick {
+                    session?.captureWindow(window.info)
+                    return
+                }
+                self.selection = window.frame.intersection(bounds)
+                hoveredWindow = nil
+                updateCursor(at: point)
+                redraw()
+                return
+            }
             clearSelection()
             return
         }
@@ -167,12 +188,14 @@ final class SelectionView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         mouseLocation = bounds.contains(point) ? snap(point) : nil
+        hoveredWindow = selection == nil ? window(at: point) : nil
         updateCursor(at: point)
         needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
         mouseLocation = nil
+        hoveredWindow = nil
         needsDisplay = true
     }
 
@@ -214,6 +237,10 @@ final class SelectionView: NSView {
     @objc private func capturePressed() { session?.capture(from: self) }
 
     // MARK: - Geometry
+
+    private func window(at point: NSPoint) -> (info: WindowInfo, frame: NSRect)? {
+        windows.first { $0.frame.contains(point) }
+    }
 
     private func snap(_ point: NSPoint) -> NSPoint {
         let scale = snapshot.scale
@@ -327,6 +354,10 @@ final class SelectionView: NSView {
             drawSizeLabel(for: selection)
         }
 
+        if selection == nil, let hoveredWindow {
+            drawWindowHighlight(hoveredWindow)
+        }
+
         guard let mouseLocation else { return }
         let showsMagnifier: Bool
         switch dragState {
@@ -340,6 +371,29 @@ final class SelectionView: NSView {
         if showsMagnifier {
             drawMagnifier(at: mouseLocation, in: context)
         }
+    }
+
+    private func drawWindowHighlight(_ window: (info: WindowInfo, frame: NSRect)) {
+        let frame = window.frame.intersection(bounds)
+        let dim = NSBezierPath(rect: bounds)
+        dim.append(NSBezierPath(rect: frame))
+        dim.windingRule = .evenOdd
+        NSColor.black.withAlphaComponent(0.3).setFill()
+        dim.fill()
+
+        NSColor.controlAccentColor.withAlphaComponent(0.18).setFill()
+        frame.fill()
+        let border = NSBezierPath(rect: frame.insetBy(dx: 1, dy: 1))
+        border.lineWidth = 2
+        NSColor.controlAccentColor.setStroke()
+        border.stroke()
+
+        let label = pill(window.info.ownerName.isEmpty ? "Click to capture window" : "\(window.info.ownerName) — click to capture")
+        let origin = NSPoint(
+            x: min(max(frame.midX - label.size.width / 2, bounds.minX + 4), bounds.maxX - label.size.width - 4),
+            y: min(max(frame.midY - label.size.height / 2, bounds.minY + 4), bounds.maxY - label.size.height - 4)
+        )
+        label.draw(at: origin)
     }
 
     private func drawHandles(for rect: NSRect, in context: CGContext) {

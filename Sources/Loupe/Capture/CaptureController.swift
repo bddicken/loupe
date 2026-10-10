@@ -16,14 +16,17 @@ final class CaptureController {
         Task {
             defer { isSnapshotting = false }
             do {
+                let windows = ScreenCapturer.visibleWindows()
                 let snapshots = try await ScreenCapturer.snapshotAllDisplays(
                     excludingWindowNumbers: QuickAccessManager.shared.windowNumbers
                 )
                 guard !snapshots.isEmpty else { return }
-                let session = SelectionSession(snapshots: snapshots, mode: mode) { [weak self] result in
+                let session = SelectionSession(snapshots: snapshots, windows: windows, mode: mode) { [weak self] result in
                     self?.session = nil
-                    if let result {
-                        self?.didCapture(result.image, scale: result.scale)
+                    switch result {
+                    case let .image(image, scale): self?.didCapture(image, scale: scale)
+                    case let .window(id): self?.captureWindow(id)
+                    case nil: break
                     }
                 }
                 self.session = session
@@ -46,6 +49,18 @@ final class CaptureController {
                 )
                 if let snapshot = snapshots.first {
                     didCapture(snapshot.image, scale: snapshot.scale)
+                }
+            } catch {
+                showCaptureError(error)
+            }
+        }
+    }
+
+    private func captureWindow(_ id: CGWindowID) {
+        Task {
+            do {
+                if let (image, scale) = try await ScreenCapturer.captureWindow(id: id) {
+                    didCapture(image, scale: scale)
                 }
             } catch {
                 showCaptureError(error)

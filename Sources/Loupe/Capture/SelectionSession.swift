@@ -12,33 +12,36 @@ final class SelectionSession {
         case adjustable
     }
 
-    struct Result {
-        let image: CGImage
-        let scale: CGFloat
+    enum Result {
+        case image(CGImage, scale: CGFloat)
+        case window(CGWindowID)
     }
 
     let mode: Mode
+    /// Windows that can be clicked to capture, frontmost first.
+    let windows: [WindowInfo]
     private let snapshots: [DisplaySnapshot]
     private let completion: (Result?) -> Void
-    private var windows: [OverlayWindow] = []
+    private var overlays: [OverlayWindow] = []
     private var finished = false
     private var previousApp: NSRunningApplication?
 
-    init(snapshots: [DisplaySnapshot], mode: Mode, completion: @escaping (Result?) -> Void) {
+    init(snapshots: [DisplaySnapshot], windows: [WindowInfo], mode: Mode, completion: @escaping (Result?) -> Void) {
         self.snapshots = snapshots
+        self.windows = windows
         self.mode = mode
         self.completion = completion
     }
 
     func begin() {
         previousApp = NSWorkspace.shared.frontmostApplication
-        windows = snapshots.map { OverlayWindow(snapshot: $0, session: self) }
-        for window in windows {
+        overlays = snapshots.map { OverlayWindow(snapshot: $0, session: self) }
+        for window in overlays {
             window.orderFrontRegardless()
         }
         NSApp.activate(ignoringOtherApps: true)
         let mouseScreen = NSScreen.underMouse
-        let keyWindow = windows.first { $0.snapshot.screen == mouseScreen } ?? windows.first
+        let keyWindow = overlays.first { $0.snapshot.screen == mouseScreen } ?? overlays.first
         keyWindow?.makeKeyAndOrderFront(nil)
         keyWindow?.makeFirstResponder(keyWindow?.selectionView)
         NSCursor.crosshair.set()
@@ -46,7 +49,7 @@ final class SelectionSession {
 
     /// Only one display can hold a selection at a time.
     func selectionDidBegin(in view: SelectionView) {
-        for window in windows where window.selectionView !== view {
+        for window in overlays where window.selectionView !== view {
             window.selectionView.clearSelection()
         }
         if let window = view.window, !window.isKeyWindow {
@@ -61,16 +64,20 @@ final class SelectionSession {
 
     func capture(from view: SelectionView) {
         guard let image = view.capturedImage() else { return }
-        finish(with: Result(image: image, scale: view.snapshot.scale))
+        finish(with: .image(image, scale: view.snapshot.scale))
+    }
+
+    func captureWindow(_ window: WindowInfo) {
+        finish(with: .window(window.id))
     }
 
     private func finish(with result: Result?) {
         guard !finished else { return }
         finished = true
-        for window in windows {
+        for window in overlays {
             window.orderOut(nil)
         }
-        windows.removeAll()
+        overlays.removeAll()
         NSCursor.arrow.set()
         if let previousApp, previousApp != NSRunningApplication.current {
             previousApp.activate()

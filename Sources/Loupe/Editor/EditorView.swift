@@ -6,6 +6,8 @@ struct EditorView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
+                AnnotationToolbar(model: model)
+                Divider()
                 canvas
                 Divider()
                 bottomBar
@@ -14,7 +16,7 @@ struct EditorView: View {
             EditorSidebar(model: model)
                 .frame(width: 260)
         }
-        .frame(minWidth: 720, minHeight: 460)
+        .frame(minWidth: 900, minHeight: 500)
     }
 
     // MARK: - Canvas
@@ -34,6 +36,8 @@ struct EditorView: View {
 
                         if model.isCropping {
                             CropOverlay(rect: $model.pendingCrop, aspect: model.normalizedAspect, size: size)
+                        } else {
+                            annotationCanvas(displaySize: size)
                         }
                     }
                     .frame(width: size.width, height: size.height)
@@ -56,6 +60,18 @@ struct EditorView: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .animation(.easeOut(duration: 0.15), value: model.toast)
         }
+    }
+
+    private func annotationCanvas(displaySize: CGSize) -> some View {
+        let geometry = model.sourceToCanvas()
+        let scale = displaySize.width / max(geometry.canvasSize.width, 1)
+        let toView = CGAffineTransform(scaleX: scale, y: scale)
+        return AnnotationCanvas(
+            model: model,
+            transform: geometry.transform.concatenating(toView),
+            contentRect: geometry.contentRect.applying(toView)
+        )
+        .frame(width: displaySize.width, height: displaySize.height)
     }
 
     /// Fit the image in the canvas, but never enlarge past its natural (point) size.
@@ -149,7 +165,7 @@ private struct EditorSidebar: View {
                             .frame(maxWidth: .infinity)
                     }
                     .controlSize(.large)
-                    .keyboardShortcut("c", modifiers: [])
+                    .help("Crop (C)")
 
                     HStack(spacing: 6) {
                         iconButton("rotate.left", help: "Rotate Left") { model.apply(.rotateLeft) }

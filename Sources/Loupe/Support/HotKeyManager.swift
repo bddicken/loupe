@@ -30,6 +30,14 @@ final class HotKeyManager {
         return true
     }
 
+    func unregisterAll() {
+        for ref in refs {
+            UnregisterEventHotKey(ref)
+        }
+        refs.removeAll()
+        handlers.removeAll()
+    }
+
     private func installHandlerIfNeeded() {
         guard !handlerInstalled else { return }
         handlerInstalled = true

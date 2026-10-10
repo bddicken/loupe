@@ -49,11 +49,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     private static func initialContentSize(for screenshot: Screenshot) -> NSSize {
         let sidebar: CGFloat = 260
-        let chrome = NSSize(width: sidebar + 64, height: 64 + 56)
+        let chrome = NSSize(width: sidebar + 64, height: 64 + 56 + 40)
         let natural = screenshot.pointSize
         let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame.size
-        let width = min(max(natural.width + chrome.width, 720), visible.width * 0.85)
-        let height = min(max(natural.height + chrome.height, 460), visible.height * 0.85)
+        let width = min(max(natural.width + chrome.width, 900), visible.width * 0.85)
+        let height = min(max(natural.height + chrome.height, 560), visible.height * 0.85)
         return NSSize(width: width, height: height)
     }
 

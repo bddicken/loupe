@@ -35,10 +35,11 @@ struct EditState: Equatable {
     /// Normalized crop (top-left origin) in the oriented image's space. nil = uncropped.
     var crop: CGRect?
     var backdrop = Backdrop()
+    var annotations: [Annotation] = []
 
     /// True when exporting would reproduce the original pixels exactly.
     var isIdentity: Bool {
-        adjustments == Adjustments() && orientation.isEmpty && crop == nil && !backdrop.enabled
+        adjustments == Adjustments() && orientation.isEmpty && crop == nil && !backdrop.enabled && annotations.isEmpty
     }
 }
 
@@ -88,6 +89,13 @@ final class EditorModel: ObservableObject {
     }
     @Published private(set) var savedState = EditState()
     @Published var toast: String?
+
+    // Annotation tool settings.
+    @Published var tool: AnnotationTool = .arrow
+    @Published private(set) var annotationColor = RGBAColor(hex: 0xFF3B30)
+    /// Stroke width in points; text and counters scale from it.
+    @Published private(set) var annotationSize: Double = 4
+    @Published var selectedAnnotationID: UUID?
 
     private var undoStack: [EditState] = []
     private var redoStack: [EditState] = []
@@ -306,11 +314,22 @@ final class EditorModel: ObservableObject {
         let latest = latestRender
         let backgroundImage = currentBackgroundImage
         let pixelsPerPoint = screenshot.scale * previewScale
+        let previewScale = self.previewScale
+        // The live canvas draws vector annotations on top of the preview,
+        // except while cropping (when the canvas is hidden).
+        let includeVector = isCropping
 
         renderQueue.async {
             // Skip frames that were superseded while a slider was moving.
             guard latest.isCurrent(token) else { return }
-            let output = Self.render(source, state: state, applyCrop: applyCrop)
+            let output = Self.render(
+                source,
+                state: state,
+                applyCrop: applyCrop,
+                sourceScale: previewScale,
+                pixelsPerPoint: pixelsPerPoint,
+                includeVectorAnnotations: includeVector
+            )
             var image = Self.context.createCGImage(output, from: output.extent, format: .RGBA8, colorSpace: colorSpace)
             if applyCrop, let content = image {
                 image = state.backdrop.compose(content, pixelsPerPoint: pixelsPerPoint, backgroundImage: backgroundImage)
@@ -325,14 +344,30 @@ final class EditorModel: ObservableObject {
     /// The edited image at full resolution.
     func renderFullResolution() -> CGImage? {
         if state.isIdentity { return screenshot.image }
-        let output = Self.render(fullSource, state: state, applyCrop: true)
+        let output = Self.render(
+            fullSource,
+            state: state,
+            applyCrop: true,
+            sourceScale: 1,
+            pixelsPerPoint: screenshot.scale,
+            includeVectorAnnotations: true
+        )
         guard let content = Self.context.createCGImage(output, from: output.extent, format: .RGBA8, colorSpace: colorSpace) else {
             return nil
         }
         return state.backdrop.compose(content, pixelsPerPoint: screenshot.scale, backgroundImage: currentBackgroundImage)
     }
 
-    nonisolated static func render(_ source: CIImage, state: EditState, applyCrop: Bool) -> CIImage {
+    /// - sourceScale: `source` pixels per full-resolution pixel (annotations are in full-res pixels).
+    /// - pixelsPerPoint: `source` pixels per screen point, for sizing blur/pixelate.
+    nonisolated static func render(
+        _ source: CIImage,
+        state: EditState,
+        applyCrop: Bool,
+        sourceScale: CGFloat,
+        pixelsPerPoint: CGFloat,
+        includeVectorAnnotations: Bool
+    ) -> CIImage {
         var image = source
         let a = state.adjustments
 
@@ -360,6 +395,13 @@ final class EditorModel: ObservableObject {
             image = image.applyingFilter("CIHueAdjust", parameters: [kCIInputAngleKey: a.hue * .pi / 180])
         }
         image = image.cropped(to: source.extent)
+        image = applyAnnotations(
+            state.annotations,
+            to: image,
+            sourceScale: sourceScale,
+            pixelsPerPoint: pixelsPerPoint,
+            includeVector: includeVectorAnnotations
+        )
 
         for op in state.orientation {
             let transform: CGAffineTransform
@@ -384,6 +426,160 @@ final class EditorModel: ObservableObject {
             image = image.cropped(to: rect).movedToOrigin()
         }
         return image
+    }
+
+    /// Blur/pixelate regions are Core Image effects on the pixels underneath;
+    /// everything else is rasterized with AnnotationRenderer and composited on top.
+    nonisolated private static func applyAnnotations(
+        _ annotations: [Annotation],
+        to input: CIImage,
+        sourceScale: CGFloat,
+        pixelsPerPoint: CGFloat,
+        includeVector: Bool
+    ) -> CIImage {
+        guard !annotations.isEmpty else { return input }
+        let extent = input.extent
+        var image = input
+
+        for annotation in annotations where annotation.kind.isRegionEffect {
+            let r = annotation.rect
+            let region = CGRect(
+                x: extent.minX + r.minX * sourceScale,
+                y: extent.maxY - r.maxY * sourceScale, // flip to Core Image's y-up space
+                width: r.width * sourceScale,
+                height: r.height * sourceScale
+            ).intersection(extent)
+            guard !region.isNull, region.width >= 1, region.height >= 1 else { continue }
+
+            let effect: CIImage
+            if annotation.kind == .blur {
+                effect = image.clampedToExtent()
+                    .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 12 * pixelsPerPoint])
+            } else {
+                effect = image.clampedToExtent().applyingFilter("CIPixellate", parameters: [
+                    kCIInputScaleKey: max(4, 10 * pixelsPerPoint),
+                    kCIInputCenterKey: CIVector(x: region.minX, y: region.minY),
+                ])
+            }
+            image = effect.cropped(to: region).composited(over: image)
+        }
+
+        if includeVector,
+           let overlay = AnnotationRenderer.rasterize(annotations, pixelSize: extent.size, scale: sourceScale) {
+            let placed = CIImage(cgImage: overlay).transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
+            image = placed.composited(over: image)
+        }
+        return image
+    }
+
+    // MARK: - Annotations
+
+    func newAnnotation(_ kind: Annotation.Kind, points: [CGPoint]) -> Annotation {
+        let pixelsPerPoint = screenshot.scale
+        var annotation = Annotation(
+            kind: kind,
+            points: points,
+            color: annotationColor,
+            strokeWidth: annotationSize * pixelsPerPoint,
+            fontSize: (10 + annotationSize * 4) * pixelsPerPoint
+        )
+        if kind == .step {
+            annotation.number = (state.annotations.filter { $0.kind == .step }.map(\.number).max() ?? 0) + 1
+        }
+        return annotation
+    }
+
+    func addAnnotation(_ annotation: Annotation) {
+        checkpoint()
+        state.annotations.append(annotation)
+        selectedAnnotationID = annotation.id
+    }
+
+    func updateAnnotation(_ id: UUID, checkpoint shouldCheckpoint: Bool, _ change: (inout Annotation) -> Void) {
+        guard let index = state.annotations.firstIndex(where: { $0.id == id }) else { return }
+        var annotation = state.annotations[index]
+        change(&annotation)
+        guard annotation != state.annotations[index] else { return }
+        if shouldCheckpoint { checkpoint() }
+        state.annotations[index] = annotation
+    }
+
+    /// Not undoable on its own — call `checkpoint()` once before a drag.
+    func moveAnnotation(_ id: UUID, dx: CGFloat, dy: CGFloat) {
+        guard let index = state.annotations.firstIndex(where: { $0.id == id }) else { return }
+        state.annotations[index] = state.annotations[index].offsetBy(dx: dx, dy: dy)
+    }
+
+    func removeAnnotation(_ id: UUID) {
+        guard state.annotations.contains(where: { $0.id == id }) else { return }
+        checkpoint()
+        state.annotations.removeAll { $0.id == id }
+        if selectedAnnotationID == id { selectedAnnotationID = nil }
+    }
+
+    func deleteSelectedAnnotation() {
+        if let id = selectedAnnotationID { removeAnnotation(id) }
+    }
+
+    var selectedAnnotation: Annotation? {
+        state.annotations.first { $0.id == selectedAnnotationID }
+    }
+
+    /// Sets the drawing color, and recolors the selected annotation.
+    func setAnnotationColor(_ color: RGBAColor, checkpoint shouldCheckpoint: Bool = true) {
+        annotationColor = color
+        if let id = selectedAnnotationID {
+            updateAnnotation(id, checkpoint: shouldCheckpoint) { $0.color = color }
+        }
+    }
+
+    /// Sets the drawing size, and resizes the selected annotation.
+    func setAnnotationSize(_ size: Double, checkpoint shouldCheckpoint: Bool) {
+        annotationSize = size
+        if let id = selectedAnnotationID {
+            let pixelsPerPoint = screenshot.scale
+            updateAnnotation(id, checkpoint: shouldCheckpoint) {
+                $0.strokeWidth = size * pixelsPerPoint
+                $0.fontSize = (10 + size * 4) * pixelsPerPoint
+            }
+        }
+    }
+
+    // MARK: - Geometry
+
+    /// Maps source pixels (top-left origin) to full-resolution canvas pixels
+    /// (top-left origin): orientation, then crop, then backdrop padding.
+    /// Also returns the canvas size and where the screenshot sits in it.
+    func sourceToCanvas() -> (transform: CGAffineTransform, canvasSize: CGSize, contentRect: CGRect) {
+        var transform = CGAffineTransform.identity
+        var w = CGFloat(screenshot.image.width), h = CGFloat(screenshot.image.height)
+
+        for op in state.orientation {
+            // x' = a·x + c·y + tx,  y' = b·x + d·y + ty
+            let step: CGAffineTransform = switch op {
+            case .rotateRight: CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: h, ty: 0)
+            case .rotateLeft: CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: w)
+            case .flipHorizontal: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: w, ty: 0)
+            case .flipVertical: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: h)
+            }
+            transform = transform.concatenating(step)
+            if op.swapsAxes { swap(&w, &h) }
+        }
+
+        if let crop = state.crop {
+            transform = transform.concatenating(CGAffineTransform(translationX: -crop.minX * w, y: -crop.minY * h))
+            w = (crop.width * w).rounded()
+            h = (crop.height * h).rounded()
+        }
+
+        let content = CGSize(width: w, height: h)
+        let canvas = state.backdrop.canvasSize(forContent: content, pixelsPerPoint: screenshot.scale)
+        // Same placement as Backdrop.compose (which works y-up).
+        let x = ((canvas.width - w) / 2).rounded()
+        let yUp = ((canvas.height - h) / 2).rounded()
+        let y = canvas.height - yUp - h
+        transform = transform.concatenating(CGAffineTransform(translationX: x, y: y))
+        return (transform, canvas, CGRect(x: x, y: y, width: w, height: h))
     }
 
     // MARK: - Output
