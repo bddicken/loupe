@@ -16,7 +16,7 @@
 # must approve it once on first launch (see INSTALL.md).
 #
 # Also generates dist/site/: the landing page (site/index.html filled in with
-# this release) plus the DMG, ready to upload to any static host. To host the
+# this release's version) plus the DMG, ready to upload to any static host. To host the
 # DMG elsewhere (e.g. a GitHub Release asset), set $LOUPE_DOWNLOAD_URL and the
 # DMG is left out of the folder.
 set -euo pipefail
@@ -79,8 +79,6 @@ else
   export PAGE_URL="Loupe-$VERSION.dmg"
 fi
 export PAGE_VERSION="$VERSION"
-export PAGE_SIZE="$(du -h "$DMG" | awk '{print $1}')B"
-export PAGE_DATE="$(date '+%B %-d, %Y')"
 if (( NOTARIZED )); then
   export PAGE_GK_OPEN=""
   export PAGE_GK_INTRO="Loupe is notarized by Apple, so you shouldn’t see this. If you do:"
@@ -90,7 +88,6 @@ else
 fi
 perl -pe '
   s/\{\{DOWNLOAD_URL\}\}/$ENV{PAGE_URL}/g; s/\{\{VERSION\}\}/$ENV{PAGE_VERSION}/g;
-  s/\{\{SIZE\}\}/$ENV{PAGE_SIZE}/g; s/\{\{DATE\}\}/$ENV{PAGE_DATE}/g;
   s/\{\{GATEKEEPER_OPEN\}\}/$ENV{PAGE_GK_OPEN}/g; s/\{\{GATEKEEPER_INTRO\}\}/$ENV{PAGE_GK_INTRO}/g;
 ' "$ROOT/site/index.html" > "$SITE/index.html"
 
