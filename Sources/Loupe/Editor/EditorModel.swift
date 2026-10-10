@@ -111,7 +111,15 @@ final class EditorModel: ObservableObject {
     /// than `cropCanvas` so dragging past the visible area already has pixels.
     @Published private(set) var previewCropCanvas = EditorModel.fullRect
     @Published private(set) var isCropping = false
-    @Published var pendingCrop = EditorModel.fullRect
+    @Published var pendingCrop = EditorModel.fullRect {
+        didSet {
+            // Never move the view; instead, once the crop reaches past what's been
+            // rendered, render a wider area so the extended part fills in.
+            if isCropping, !requestedRenderCanvas.contains(pendingCrop) { scheduleRender() }
+        }
+    }
+    /// The area the latest crop-mode render was asked to cover.
+    private var requestedRenderCanvas = EditorModel.fullRect
     /// While cropping, the area shown (normalized, like `pendingCrop`): the image
     /// and the crop, plus room around them to keep dragging outward. It only
     /// changes between drags, so the view never shifts under the pointer.
@@ -123,7 +131,8 @@ final class EditorModel: ObservableObject {
     @Published private(set) var pan: CGSize = .zero
     /// Last laid-out canvas size and fitted image size, for clamping pan and menu zooms.
     private var zoomViewport: (canvas: CGSize, fit: CGSize, scale: CGFloat) = (.zero, .zero, 1)
-    static let zoomRange: ClosedRange<CGFloat> = 1...12
+    /// Below 1 zooms out past "fit", e.g. to see a crop extended far past the image.
+    static let zoomRange: ClosedRange<CGFloat> = 0.2...12
     @Published var cropAspect: CropAspect = .free {
         didSet { applyAspectToPendingCrop() }
     }
@@ -344,6 +353,7 @@ final class EditorModel: ObservableObject {
         let isFull = abs(r.minX) < 0.001 && abs(r.minY) < 0.001 && abs(r.maxX - 1) < 0.001 && abs(r.maxY - 1) < 0.001
         let newCrop: CGRect? = isFull ? nil : pendingCrop
         isCropping = false
+        resetZoom()
         Preferences.cropExtend = pendingCropExtend
         if newCrop != state.crop || pendingCropExtend != state.cropExtend {
             checkpoint()
@@ -357,34 +367,21 @@ final class EditorModel: ObservableObject {
     func cancelCrop() {
         guard isCropping else { return }
         isCropping = false
+        resetZoom()
         scheduleRender()
     }
 
     func resetPendingCrop() {
         pendingCrop = Self.fullRect
         applyAspectToPendingCrop()
-        refitCropCanvas()
     }
 
-    /// Zooms the crop view out (or back in) to fit the crop when a drag ends,
-    /// so there is always room to drag further. Small changes are left alone
-    /// to avoid needless zooming.
-    func refitCropCanvas() {
-        guard isCropping else { return }
-        let ideal = makeCropCanvas(around: pendingCrop)
-        let content = Self.fullRect.union(pendingCrop)
-        let margin = CGSize(width: cropCanvas.width * 0.03, height: cropCanvas.height * 0.03)
-        let fitsComfortably = cropCanvas.insetBy(dx: margin.width, dy: margin.height).contains(content)
-        let wastesSpace = ideal.width * ideal.height < cropCanvas.width * cropCanvas.height * 0.6
-        guard !fitsComfortably || wastesSpace else { return }
-        cropCanvas = ideal
-        scheduleRender()
-    }
-
-    /// What a crop-mode preview renders: the visible canvas plus half its size
-    /// on every side, so dragging outward never reveals an empty area.
-    private func renderCanvas(for canvas: CGRect) -> CGRect {
-        canvas.insetBy(dx: -canvas.width / 2, dy: -canvas.height / 2)
+    /// What a crop-mode preview renders: the visible canvas and the crop, plus
+    /// half their size on every side, so dragging outward rarely reveals an empty area.
+    /// The view itself (`cropCanvas`) never changes while cropping; zoom and pan do the framing.
+    private func renderCanvas() -> CGRect {
+        let area = cropCanvas.union(pendingCrop)
+        return area.insetBy(dx: -area.width / 2, dy: -area.height / 2)
     }
 
     // MARK: - Zoom
@@ -397,7 +394,7 @@ final class EditorModel: ObservableObject {
 
     /// Zooms by `factor`, keeping `anchor` (view points from the canvas center) fixed.
     func zoom(by factor: CGFloat, around anchor: CGPoint = .zero) {
-        guard !isCropping, factor > 0 else { return }
+        guard factor > 0 else { return }
         let newZoom = min(max(zoom * factor, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
         let ratio = newZoom / zoom
         let newPan = CGSize(
@@ -409,7 +406,8 @@ final class EditorModel: ObservableObject {
     }
 
     func pan(by delta: CGSize) {
-        guard !isCropping, zoom > 1 else { return }
+        // While cropping, panning is always allowed: the crop may reach past the view.
+        guard zoom > 1 || isCropping else { return }
         pan = clampedPan(CGSize(width: pan.width + delta.width, height: pan.height + delta.height))
     }
 
@@ -431,6 +429,12 @@ final class EditorModel: ObservableObject {
     /// Keeps at least part of the image on screen.
     private func clampedPan(_ pan: CGSize) -> CGSize {
         let (canvas, fit, _) = zoomViewport
+        if isCropping {
+            // Keep some of the canvas in view, but allow panning out toward a far-reaching crop.
+            let maxX = (fit.width * zoom + canvas.width) / 2 - 40
+            let maxY = (fit.height * zoom + canvas.height) / 2 - 40
+            return CGSize(width: min(max(pan.width, -maxX), maxX), height: min(max(pan.height, -maxY), maxY))
+        }
         let maxX = max(0, (fit.width * zoom - canvas.width) / 2 + 60)
         let maxY = max(0, (fit.height * zoom - canvas.height) / 2 + 60)
         guard zoom > 1 else { return .zero }
@@ -477,7 +481,8 @@ final class EditorModel: ObservableObject {
         if isCropping { state.cropExtend = pendingCropExtend }
         let fillPixel = state.cropExtend == .commonColor ? commonEdgePixel : nil
         // While cropping, render well past the visible canvas so the crop can be dragged outward.
-        let crop = isCropping ? renderCanvas(for: cropCanvas) : state.crop
+        let crop = isCropping ? renderCanvas() : state.crop
+        if isCropping, let crop { requestedRenderCanvas = crop }
         let source = previewSource
         let colorSpace = self.colorSpace
         let latest = latestRender

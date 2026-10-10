@@ -8,10 +8,9 @@ struct CropOverlay: View {
     /// Width/height in normalized space, or nil for free-form.
     let aspect: CGFloat?
     /// The normalized area shown in `size`: the image plus room around it.
-    /// The crop can be dragged past it; `onDragEnded` lets the owner zoom out to fit.
+    /// The crop can be dragged past it; the user zooms/pans to see more.
     let bounds: CGRect
     let size: CGSize
-    var onDragEnded: () -> Void = {}
 
     // `State` is used directly: the @State macro plugin ships only with Xcode.
     private let dragStartState = State<CGRect?>(initialValue: nil)
@@ -94,7 +93,9 @@ struct CropOverlay: View {
                     .gesture(resizeGesture(handle))
             }
         }
-        .frame(width: size.width, height: size.height)
+        // Top-leading: when the crop is bigger than the visible canvas (zoomed out or
+        // dragged far), a centered frame would shift every layer off the image.
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
         .coordinateSpace(name: "crop")
     }
 
@@ -154,10 +155,7 @@ struct CropOverlay: View {
                 y = snapped(y + start.height, threshold: snapY) - start.height
                 rect.origin = CGPoint(x: x, y: y)
             }
-            .onEnded { _ in
-                dragStart = nil
-                onDragEnded()
-            }
+            .onEnded { _ in dragStart = nil }
     }
 
     private func resizeGesture(_ handle: Handle) -> some Gesture {
@@ -172,10 +170,7 @@ struct CropOverlay: View {
                     dy: value.translation.height * unitsPerPoint.height
                 )
             }
-            .onEnded { _ in
-                dragStart = nil
-                onDragEnded()
-            }
+            .onEnded { _ in dragStart = nil }
     }
 
     private func resized(_ start: CGRect, handle: Handle, dx: CGFloat, dy: CGFloat) -> CGRect {

@@ -43,7 +43,7 @@ struct EditorView: View {
                 if let preview = model.preview {
                     let layout = canvasLayout(for: preview, in: geometry.size)
                     let _ = model.updateZoomViewport(canvas: geometry.size, fit: layout.fit, scale: layout.scale)
-                    let zoom = model.isCropping ? 1 : model.zoom
+                    let zoom = model.zoom
                     let size = CGSize(width: (layout.fit.width * zoom).rounded(), height: (layout.fit.height * zoom).rounded())
                     Group {
                         if model.isCropping {
@@ -53,8 +53,7 @@ struct EditorView: View {
                                     rect: $model.pendingCrop,
                                     aspect: model.normalizedAspect,
                                     bounds: model.cropCanvas,
-                                    size: size,
-                                    onDragEnded: model.refitCropCanvas
+                                    size: size
                                 )
                             }
                             .frame(width: size.width, height: size.height)
@@ -63,7 +62,7 @@ struct EditorView: View {
                         }
                     }
                     .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-                    .offset(model.isCropping ? .zero : model.pan)
+                    .offset(model.pan)
                 }
 
                 if let toast = model.toast {
@@ -82,8 +81,6 @@ struct EditorView: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             // A crop dragged past the canvas, or a zoomed image, mustn't draw over the toolbar or sidebar.
             .clipped()
-            // Re-fitting the crop view after a drag eases instead of jumping.
-            .animation(.easeOut(duration: 0.2), value: model.cropCanvas)
             .animation(.easeOut(duration: 0.15), value: model.toast)
         }
     }
@@ -230,6 +227,8 @@ struct EditorView: View {
             .fixedSize()
             .help("How to fill a crop that reaches past the image: repeat the edge pixels, or use the most common border color")
 
+            zoomControl
+
             Spacer(minLength: 8)
 
             if showSize {
@@ -285,7 +284,7 @@ struct EditorView: View {
                 .disabled(model.zoom <= EditorModel.zoomRange.lowerBound)
                 .help("Zoom Out (⌘-)")
             Button { model.resetZoom() } label: {
-                Text(model.zoom > 1.001 ? "\(model.zoomPercent)%" : "Fit")
+                Text(abs(model.zoom - 1) > 0.001 ? "\(model.zoomPercent)%" : "Fit")
                     .font(.callout.monospacedDigit())
                     .frame(minWidth: 44)
             }
@@ -778,7 +777,7 @@ private final class CanvasGestureView: NSView {
 
     @MainActor
     private func handle(_ event: NSEvent) -> NSEvent? {
-        guard event.window === window, !model.isCropping else { return event }
+        guard event.window === window else { return event }
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return event }
         // The image is centered in the canvas, so anchors are relative to its center.
