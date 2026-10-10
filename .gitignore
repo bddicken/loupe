@@ -2,3 +2,4 @@
 build/
 .swiftpm/
 .DS_Store
+dist/

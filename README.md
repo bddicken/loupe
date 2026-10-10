@@ -25,6 +25,22 @@ after every build.
 For "Launch at login", copy the app to `/Applications` first (`cp -R build/Loupe.app /Applications/`)
 so the login item doesn't point at the build folder.
 
+## Releasing
+
+```bash
+scripts/release.sh 0.2.0
+```
+
+This builds `dist/Loupe-0.2.0.dmg` (universal app plus an Applications shortcut) and prints its SHA-256
+for the download page. Send recipients [INSTALL.md](INSTALL.md).
+
+- **With a Developer ID certificate** (Apple Developer Program), the script signs the app and DMG with the
+  hardened runtime, notarizes them, and staples the ticket, so they open with no warnings. One-time setup:
+  `xcrun notarytool store-credentials loupe-notary --apple-id … --team-id … --password <app-specific password>`.
+- **Without one**, the DMG is signed with your local identity. Recipients approve it once on first launch
+  ("Open Anyway"). Because the signing identity stays the same across releases, their Screen Recording
+  permission survives updates.
+
 ## Features
 
 | Shortcut | Action |
