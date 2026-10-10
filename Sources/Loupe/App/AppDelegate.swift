@@ -34,11 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 fflush(stdout)
             }
         }
-
-        if !CGPreflightScreenCaptureAccess() {
-            // Adds Loupe to System Settings > Privacy & Security > Screen Recording.
-            CGRequestScreenCaptureAccess()
-        }
+        // Screen Recording permission is requested on the first capture (by
+        // ScreenCaptureKit), not at launch, so a missing or stale permission
+        // doesn't prompt every time Loupe starts.
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

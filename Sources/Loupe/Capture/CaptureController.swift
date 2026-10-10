@@ -195,7 +195,7 @@ final class CaptureController {
             return
         }
         alert.messageText = "Loupe needs Screen Recording permission"
-        alert.informativeText = "Enable Loupe in System Settings → Privacy & Security → Screen & System Audio Recording, then try again. You may need to relaunch Loupe."
+        alert.informativeText = "Enable Loupe in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen Loupe.\n\nIf Loupe is already switched on there, select it, click − to remove it, and enable it again."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn,
