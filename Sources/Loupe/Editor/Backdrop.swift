@@ -49,6 +49,16 @@ struct GradientPreset: Identifiable {
         case grid(RGBAColor, spacing: Double)
         /// Diagonal pinstripes.
         case lines(RGBAColor, spacing: Double, width: Double)
+        /// A fine woven crosshatch, like linen.
+        case crosshatch(RGBAColor, spacing: Double)
+        /// Scattered stone chips, like terrazzo.
+        case flecks([RGBAColor], spacing: Double)
+        /// Wavy contour lines, like a topographic map.
+        case contours(RGBAColor, spacing: Double, amplitude: Double)
+        /// Dots that grow across the canvas, like a halftone print.
+        case halftone(RGBAColor, spacing: Double, maxRadius: Double)
+        /// An isometric (triangle) grid.
+        case isometric(RGBAColor, spacing: Double)
     }
 
     enum Category: String, CaseIterable, Identifiable {
@@ -63,14 +73,18 @@ struct GradientPreset: Identifiable {
     let angle: Double
     let style: Style
     let texture: Texture
+    /// Film grain layered on top of any texture (0 = none).
+    let grain: Double
 
-    init(_ id: String, _ category: Category, _ hexes: [UInt32], angle: Double = -45, style: Style = .linear, texture: Texture = .none) {
+    init(_ id: String, _ category: Category, _ hexes: [UInt32], angle: Double = -45, style: Style = .linear,
+         texture: Texture = .none, grain: Double = 0) {
         self.id = id
         self.category = category
         colors = hexes.map(RGBAColor.init(hex:))
         self.angle = angle
         self.style = style
         self.texture = texture
+        self.grain = grain
     }
 
     var name: String { id.prefix(1).uppercased() + id.dropFirst() }
@@ -118,6 +132,21 @@ struct GradientPreset: Identifiable {
                        texture: .lines(RGBAColor(red: 1, green: 1, blue: 1, alpha: 0.06), spacing: 7, width: 2)),
         GradientPreset("graph", .textured, [0xFAFAF7, 0xF0F0EA],
                        texture: .grid(RGBAColor(red: 0.2, green: 0.45, blue: 0.85, alpha: 0.13), spacing: 16)),
+        GradientPreset("linen", .textured, [0xF4EEE3, 0xE5DACA],
+                       texture: .crosshatch(RGBAColor(red: 0.45, green: 0.35, blue: 0.22, alpha: 0.07), spacing: 3), grain: 0.25),
+        GradientPreset("terrazzo", .textured, [0xF8F4EF, 0xEEE8E0],
+                       texture: .flecks([
+                           RGBAColor(hex: 0xD9745B), RGBAColor(hex: 0x8FA88B), RGBAColor(hex: 0x6C7A89),
+                           RGBAColor(hex: 0xE3B45B), RGBAColor(hex: 0xB9A99A),
+                       ], spacing: 16)),
+        GradientPreset("topo", .textured, [0x1F2B3A, 0x0F1720], style: .radial,
+                       texture: .contours(RGBAColor(red: 0.6, green: 0.85, blue: 1, alpha: 0.13), spacing: 13, amplitude: 7)),
+        GradientPreset("halftone", .textured, [0xFF7A6B, 0xC2416B],
+                       texture: .halftone(RGBAColor(red: 1, green: 1, blue: 1, alpha: 0.28), spacing: 12, maxRadius: 4.2)),
+        GradientPreset("isometric", .textured, [0xEFF3F8, 0xDCE3ED],
+                       texture: .isometric(RGBAColor(red: 0.25, green: 0.35, blue: 0.5, alpha: 0.1), spacing: 26)),
+        GradientPreset("velvet", .textured, [0x5B2E7A, 0x2A0A3D], style: .radial, grain: 0.55),
+        GradientPreset("chalkboard", .textured, [0x34453B, 0x222E28], grain: 0.45),
     ]
 
     static func named(_ id: String) -> GradientPreset {
@@ -154,10 +183,7 @@ struct GradientPreset: Identifiable {
         case .none:
             break
         case let .grain(opacity):
-            context.setAlpha(opacity)
-            context.setBlendMode(.overlay)
-            let side = 128 * unit / 2 // the 128px tile spans 64pt
-            context.draw(Self.noiseTile, in: CGRect(x: rect.minX, y: rect.minY, width: side, height: side), byTiling: true)
+            drawGrain(in: context, rect: rect, opacity: opacity, unit: unit)
         case let .dots(color, spacing, radius):
             context.setFillColor(color.cgColor)
             let step = spacing * unit, r = radius * unit
@@ -194,7 +220,109 @@ struct GradientPreset: Identifiable {
                 offset += step
             }
             context.strokePath()
+        case let .crosshatch(color, spacing):
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(max(0.5, unit * 0.75))
+            let step = spacing * unit
+            var x = rect.minX
+            while x <= rect.maxX { context.move(to: CGPoint(x: x, y: rect.minY)); context.addLine(to: CGPoint(x: x, y: rect.maxY)); x += step }
+            var y = rect.minY
+            while y <= rect.maxY { context.move(to: CGPoint(x: rect.minX, y: y)); context.addLine(to: CGPoint(x: rect.maxX, y: y)); y += step * 1.3 }
+            context.strokePath()
+        case let .flecks(palette, spacing):
+            // One chip per cell, jittered by a hash of the cell, so the pattern is
+            // identical at any resolution (live preview and export match).
+            let columns = Int(ceil(rect.width / unit / spacing)), rows = Int(ceil(rect.height / unit / spacing))
+            for row in 0...rows {
+                for column in 0...columns {
+                    var h = Self.hash(column, row)
+                    func next() -> Double { h = h &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407; return Double(h >> 11) / Double(1 << 53) }
+                    let x = (Double(column) + next()) * spacing, y = (Double(row) + next()) * spacing
+                    let size = 1.4 + next() * 4.2, aspect = 0.55 + next() * 0.45, rotation = next() * .pi
+                    let color = palette[Int(next() * Double(palette.count)) % palette.count]
+                    context.saveGState()
+                    context.translateBy(x: rect.minX + x * unit, y: rect.minY + y * unit)
+                    context.rotate(by: rotation)
+                    context.setFillColor(color.cgColor)
+                    context.fillEllipse(in: CGRect(x: -size * unit / 2, y: -size * aspect * unit / 2, width: size * unit, height: size * aspect * unit))
+                    context.restoreGState()
+                }
+            }
+        case let .contours(color, spacing, amplitude):
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(max(0.75, unit))
+            context.setLineJoin(.round)
+            let widthPoints = rect.width / unit, heightPoints = rect.height / unit
+            var line = 0
+            var base = -amplitude * 2
+            while base < heightPoints + amplitude * 2 {
+                let phase = Double(line) * 0.55
+                var x = 0.0
+                context.move(to: CGPoint(x: rect.minX, y: rect.minY + (base + amplitude * sin(phase)) * unit))
+                while x <= widthPoints + 4 {
+                    // Two overlapping waves give an organic, map-like contour.
+                    let y = base + amplitude * sin(x / 37 + phase) + amplitude * 0.55 * sin(x / 13 + phase * 1.7)
+                    context.addLine(to: CGPoint(x: rect.minX + x * unit, y: rect.minY + y * unit))
+                    x += 4
+                }
+                base += spacing
+                line += 1
+            }
+            context.strokePath()
+        case let .halftone(color, spacing, maxRadius):
+            context.setFillColor(color.cgColor)
+            let widthPoints = rect.width / unit, heightPoints = rect.height / unit
+            var y = spacing / 2
+            while y < heightPoints + spacing {
+                var x = spacing / 2
+                while x < widthPoints + spacing {
+                    // Dots grow from the top-left toward the bottom-right corner (y-up: bottom = minY).
+                    let t = (x / max(widthPoints, 1) + (1 - y / max(heightPoints, 1))) / 2
+                    let r = maxRadius * min(max(t, 0.05), 1) * unit
+                    context.addEllipse(in: CGRect(x: rect.minX + x * unit - r, y: rect.minY + y * unit - r, width: r * 2, height: r * 2))
+                    x += spacing
+                }
+                y += spacing * 0.866
+            }
+            context.fillPath()
+        case let .isometric(color, spacing):
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(max(0.75, unit))
+            let step = spacing * unit
+            let rowHeight = step * 0.866
+            var y = rect.minY
+            while y <= rect.maxY { context.move(to: CGPoint(x: rect.minX, y: y)); context.addLine(to: CGPoint(x: rect.maxX, y: y)); y += rowHeight }
+            // Two families of 60° lines.
+            let run = rect.height / tan(.pi / 3)
+            var offset = -run
+            while offset < rect.width + run {
+                context.move(to: CGPoint(x: rect.minX + offset, y: rect.minY))
+                context.addLine(to: CGPoint(x: rect.minX + offset + run, y: rect.maxY))
+                context.move(to: CGPoint(x: rect.minX + offset + run, y: rect.minY))
+                context.addLine(to: CGPoint(x: rect.minX + offset, y: rect.maxY))
+                offset += step
+            }
+            context.strokePath()
         }
+
+        if grain > 0 {
+            drawGrain(in: context, rect: rect, opacity: grain, unit: unit)
+        }
+    }
+
+    private func drawGrain(in context: CGContext, rect: CGRect, opacity: Double, unit: CGFloat) {
+        context.saveGState()
+        context.setAlpha(opacity)
+        context.setBlendMode(.overlay)
+        let side = 128 * unit / 2 // the 128px tile spans 64pt
+        context.draw(Self.noiseTile, in: CGRect(x: rect.minX, y: rect.minY, width: side, height: side), byTiling: true)
+        context.restoreGState()
+    }
+
+    private static func hash(_ a: Int, _ b: Int) -> UInt64 {
+        var h = UInt64(bitPattern: Int64(a)) &* 0x9E37_79B9_7F4A_7C15 ^ UInt64(bitPattern: Int64(b)) &* 0xC2B2_AE3D_27D4_EB4F
+        h ^= h >> 29
+        return h &* 0xBF58_476D_1CE4_E5B9
     }
 
     /// A deterministic 128×128 tile of gray noise for the grain texture.
