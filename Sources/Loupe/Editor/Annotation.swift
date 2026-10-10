@@ -100,6 +100,28 @@ struct Annotation: Identifiable, Equatable {
         CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
     }
 
+    /// Label for the layers list.
+    var layerName: String {
+        switch kind {
+        case .text: text.isEmpty ? "Text" : "“\(text)”"
+        case .step: "Counter \(number)"
+        default: AnnotationTool.allCases.first { $0.kind == kind }?.title ?? "Shape"
+        }
+    }
+
+    var symbol: String {
+        AnnotationTool.allCases.first { $0.kind == kind }?.symbol ?? "square"
+    }
+
+    /// Scales about `anchor` (source pixels). Text and counters grow their
+    /// font; strokes keep their width.
+    func scaled(by factor: CGFloat, about anchor: CGPoint) -> Annotation {
+        var copy = self
+        copy.points = points.map { CGPoint(x: anchor.x + ($0.x - anchor.x) * factor, y: anchor.y + ($0.y - anchor.y) * factor) }
+        if kind == .text || kind == .step { copy.fontSize = fontSize * factor }
+        return copy
+    }
+
     func offsetBy(dx: CGFloat, dy: CGFloat) -> Annotation {
         var copy = self
         copy.points = points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
@@ -282,11 +304,17 @@ enum AnnotationRenderer {
         }
     }
 
-    /// `tolerance` is in source pixels.
-    static func hitTest(_ annotation: Annotation, at point: CGPoint, tolerance: CGFloat) -> Bool {
-        switch annotation.kind {
-        case .text, .step, .blur, .pixelate:
+    /// `tolerance` is in source pixels. With `interior`, clicking inside a
+    /// hollow box (or blur region) counts; otherwise only its edge does.
+    static func hitTest(_ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false) -> Bool {
+        if annotation.kind == .text || annotation.kind == .step || (interior && annotation.kind.isBoxed) {
             return bounds(annotation).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+        }
+        switch annotation.kind {
+        case .blur, .pixelate:
+            return CGPath(rect: annotation.rect, transform: nil)
+                .copy(strokingWithWidth: tolerance * 2, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
+                .contains(point)
         default:
             guard let path = outlinePath(annotation) else { return false }
             let width = (annotation.kind == .highlighter ? highlighterWidth(annotation) : annotation.strokeWidth) + tolerance * 2

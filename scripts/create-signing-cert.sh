@@ -4,7 +4,8 @@
 # signed with the same identity. macOS ties the Screen Recording permission to
 # that identity, and Sparkle checks that updates are signed the same way.
 #
-# macOS asks for your password to trust the certificate. Back it up afterwards:
+# macOS asks for your password to trust the certificate, and the script asks
+# for your login keychain password so codesign can use it without prompting. Back it up afterwards:
 # Keychain Access → My Certificates → "Loupe Code Signing" → Export… (.p12).
 set -euo pipefail
 
@@ -42,6 +43,9 @@ KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 security import "$WORK/identity.p12" -k "$KEYCHAIN" -P "$PASS" -T /usr/bin/codesign
 echo "Trusting the certificate for code signing (macOS will ask for your password)…"
 security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$WORK/cert.pem"
+# Let codesign use the key without a keychain prompt on every signing step.
+echo "Allowing codesign to use the key (enter your login keychain password)…"
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -l "$NAME" "$KEYCHAIN" >/dev/null
 
 security find-identity -v -p codesigning | grep "\"$NAME\""
 echo "Done. Builds will now be signed with \"$NAME\"."

@@ -119,7 +119,16 @@ final class EditorModel: ObservableObject {
     @Published private(set) var annotationColor = RGBAColor(hex: 0xFF3B30)
     /// Stroke width in points; text and counters scale from it.
     @Published private(set) var annotationSize: Double = 4
-    @Published var selectedAnnotationID: UUID?
+    @Published var selectedAnnotationID: UUID? {
+        didSet {
+            // The toolbar reflects the selected layer's color and size.
+            guard selectedAnnotationID != oldValue, let selected = selectedAnnotation else { return }
+            annotationColor = selected.color
+            if selected.kind != .text, selected.kind != .step {
+                annotationSize = Double(selected.strokeWidth / screenshot.scale)
+            }
+        }
+    }
     /// A blur/pixelate region being dragged out; rendered live but not yet in `state`.
     @Published var regionDraft: Annotation? {
         didSet { if regionDraft != oldValue { scheduleRender() } }
@@ -598,6 +607,25 @@ final class EditorModel: ObservableObject {
 
     func deleteSelectedAnnotation() {
         if let id = selectedAnnotationID { removeAnnotation(id) }
+    }
+
+    enum LayerMove { case forward, backward, front, back }
+
+    /// Changes the selected annotation's stacking order (later = on top).
+    func moveSelectedAnnotation(_ move: LayerMove) {
+        guard let id = selectedAnnotationID,
+              let index = state.annotations.firstIndex(where: { $0.id == id }) else { return }
+        let last = state.annotations.count - 1
+        let target = switch move {
+        case .forward: min(index + 1, last)
+        case .backward: max(index - 1, 0)
+        case .front: last
+        case .back: 0
+        }
+        guard target != index else { return }
+        checkpoint()
+        let annotation = state.annotations.remove(at: index)
+        state.annotations.insert(annotation, at: target)
     }
 
     var selectedAnnotation: Annotation? {
