@@ -95,6 +95,18 @@ final class EditorWindow: NSWindow {
         MainActor.assumeIsolated { _ = model.saveAs() }
     }
 
+    @objc func zoomIn(_ sender: Any?) {
+        MainActor.assumeIsolated { model.zoom(by: 1.25) }
+    }
+
+    @objc func zoomOut(_ sender: Any?) {
+        MainActor.assumeIsolated { model.zoom(by: 1 / 1.25) }
+    }
+
+    @objc func zoomToFit(_ sender: Any?) {
+        MainActor.assumeIsolated { model.resetZoom() }
+    }
+
     @objc func undo(_ sender: Any?) {
         MainActor.assumeIsolated { model.undo() }
     }
