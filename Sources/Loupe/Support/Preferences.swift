@@ -25,6 +25,7 @@ enum Preferences {
         static let playSound = "playSound"
         static let imageFormat = "imageFormat"
         static let timerSeconds = "timerSeconds"
+        static let cropExtend = "cropExtend"
     }
 
     static func registerDefaults() {
@@ -58,6 +59,12 @@ enum Preferences {
     static var showQuickAccess: Bool { registered { UserDefaults.standard.bool(forKey: Key.showQuickAccess) } }
     static var playSound: Bool { registered { UserDefaults.standard.bool(forKey: Key.playSound) } }
     static var timerSeconds: Int { registered { UserDefaults.standard.integer(forKey: Key.timerSeconds) } }
+
+    /// How the last crop past the image's edges was filled; new edits start from it.
+    static var cropExtend: CropExtend {
+        get { UserDefaults.standard.string(forKey: Key.cropExtend).flatMap(CropExtend.init) ?? .edgePixels }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Key.cropExtend) }
+    }
     static var imageFormat: ImageFormat {
         registered { ImageFormat(rawValue: UserDefaults.standard.string(forKey: Key.imageFormat) ?? "") ?? .png }
     }

@@ -297,8 +297,8 @@ enum AnnotationRenderer {
     // MARK: - Export
 
     /// Renders vector annotations into a transparent image of `pixelSize`;
-    /// `scale` maps source pixels to output pixels (for downscaled previews).
-    static func rasterize(_ annotations: [Annotation], pixelSize: CGSize, scale: CGFloat) -> CGImage? {
+    /// `transform` maps source pixels to image pixels (both top-left origin).
+    static func rasterize(_ annotations: [Annotation], pixelSize: CGSize, transform: CGAffineTransform) -> CGImage? {
         let drawable = annotations.filter { !$0.kind.isRegionEffect }
         guard !drawable.isEmpty,
               let context = CGContext(
@@ -313,7 +313,7 @@ enum AnnotationRenderer {
 
         context.translateBy(x: 0, y: pixelSize.height)
         context.scaleBy(x: 1, y: -1)
-        context.scaleBy(x: scale, y: scale)
+        context.concatenate(transform)
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)

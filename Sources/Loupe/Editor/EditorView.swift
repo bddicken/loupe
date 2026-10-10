@@ -33,9 +33,24 @@ struct EditorView: View {
                             .resizable()
                             .interpolation(.high)
                             .frame(width: size.width, height: size.height)
+                            .mask {
+                                // While cropping, the preview includes extended edges all around;
+                                // only show them where the crop reaches.
+                                if model.isCropping {
+                                    CropOverlay.visibleArea(crop: model.pendingCrop, bounds: model.previewCropCanvas, size: size).fill()
+                                } else {
+                                    Rectangle()
+                                }
+                            }
 
                         if model.isCropping {
-                            CropOverlay(rect: $model.pendingCrop, aspect: model.normalizedAspect, size: size)
+                            CropOverlay(
+                                rect: $model.pendingCrop,
+                                aspect: model.normalizedAspect,
+                                bounds: model.previewCropCanvas,
+                                size: size,
+                                onDragEnded: model.refitCropCanvas
+                            )
                         } else {
                             annotationCanvas(displaySize: size)
                         }
@@ -58,6 +73,8 @@ struct EditorView: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            // A crop dragged past the canvas mustn't draw over the toolbar or sidebar.
+            .clipped()
             .animation(.easeOut(duration: 0.15), value: model.toast)
         }
     }
@@ -76,7 +93,7 @@ struct EditorView: View {
 
     /// Fit the image in the canvas, but never enlarge past its natural (point) size.
     private func displaySize(for preview: CGImage, in available: CGSize) -> CGSize {
-        let pointsPerPreviewPixel = 1 / (model.previewScale * model.screenshot.scale)
+        let pointsPerPreviewPixel = 1 / (model.previewScale * model.previewShrink * model.screenshot.scale)
         let natural = CGSize(
             width: CGFloat(preview.width) * pointsPerPreviewPixel,
             height: CGFloat(preview.height) * pointsPerPreviewPixel
@@ -102,6 +119,14 @@ struct EditorView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 380)
+
+                Picker("Extend", selection: $model.pendingCropExtend) {
+                    ForEach(CropExtend.allCases) { extend in
+                        Text(extend.rawValue).tag(extend)
+                    }
+                }
+                .fixedSize()
+                .help("How to fill a crop that reaches past the image: repeat the edge pixels, or use the most common border color")
 
                 Spacer()
 

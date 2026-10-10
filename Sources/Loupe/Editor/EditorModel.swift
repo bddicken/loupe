@@ -33,7 +33,9 @@ struct EditState: Equatable {
     var adjustments = Adjustments()
     var orientation: [OrientationOp] = []
     /// Normalized crop (top-left origin) in the oriented image's space. nil = uncropped.
+    /// It may reach past 0…1; `cropExtend` says how the area past the image is filled.
     var crop: CGRect?
+    var cropExtend: CropExtend = .edgePixels
     var backdrop = Backdrop()
     var annotations: [Annotation] = []
 
@@ -41,6 +43,16 @@ struct EditState: Equatable {
     var isIdentity: Bool {
         adjustments == Adjustments() && orientation.isEmpty && crop == nil && !backdrop.enabled && annotations.isEmpty
     }
+}
+
+/// How a crop that reaches past the image's edges fills the extra area.
+enum CropExtend: String, CaseIterable, Identifiable {
+    /// Repeat each edge pixel outward.
+    case edgePixels = "Edge Pixels"
+    /// One solid color: the most common color along the image's border.
+    case commonColor = "Common Color"
+
+    var id: String { rawValue }
 }
 
 enum CropAspect: String, CaseIterable, Identifiable {
@@ -82,10 +94,22 @@ final class EditorModel: ObservableObject {
         }
     }
     @Published private(set) var preview: CGImage?
+    /// Preview pixels per `previewSource` pixel: below 1 when a crop reaching far
+    /// past the image was shrunk to keep the preview a manageable size.
+    @Published private(set) var previewShrink: CGFloat = 1
+    /// The `cropCanvas` the current preview was rendered with, so the crop overlay
+    /// lines up with the image even before a re-render lands.
+    @Published private(set) var previewCropCanvas = EditorModel.fullRect
     @Published private(set) var isCropping = false
     @Published var pendingCrop = EditorModel.fullRect
+    /// While cropping, the area shown (normalized, like `pendingCrop`): the image
+    /// and the crop, plus room around them to keep dragging outward.
+    @Published private(set) var cropCanvas = EditorModel.fullRect
     @Published var cropAspect: CropAspect = .free {
         didSet { applyAspectToPendingCrop() }
+    }
+    @Published var pendingCropExtend: CropExtend = .edgePixels {
+        didSet { if pendingCropExtend != oldValue { scheduleRender() } }
     }
     @Published private(set) var savedState = EditState()
     @Published var toast: String?
@@ -113,6 +137,9 @@ final class EditorModel: ObservableObject {
     private let latestRender = RenderToken()
     private var toastTask: Task<Void, Never>?
     private var backgroundImages: [String: CGImage] = [:]
+    /// A 1×1 image of the most common border pixel, for `CropExtend.commonColor`.
+    private lazy var commonEdgePixel: CIImage? = Self.mostCommonEdgePixel(of: screenshot.image)
+        .map { fullSource.cropped(to: CGRect(x: $0.x, y: $0.y, width: 1, height: 1)) }
 
     nonisolated private static let context = CIContext(options: [.cacheIntermediates: false])
 
@@ -125,10 +152,13 @@ final class EditorModel: ObservableObject {
         let largest = CGFloat(max(screenshot.image.width, screenshot.image.height))
         if largest > maxPreviewDimension {
             previewScale = maxPreviewDimension / largest
-            previewSource = fullSource.applyingFilter("CILanczosScaleTransform", parameters: [
+            let scaled = fullSource.applyingFilter("CILanczosScaleTransform", parameters: [
                 kCIInputScaleKey: previewScale,
                 kCIInputAspectRatioKey: 1.0,
             ])
+            // Drop the partially covered edge pixels so extending the edges past a crop stays opaque.
+            let e = scaled.extent
+            previewSource = scaled.cropped(to: CGRect(x: e.minX, y: e.minY, width: e.width.rounded(.down), height: e.height.rounded(.down)))
         } else {
             previewScale = 1
             previewSource = fullSource
@@ -138,6 +168,7 @@ final class EditorModel: ObservableObject {
         var backdrop = Backdrop.loadLastUsed()
         backdrop.enabled = false
         state.backdrop = backdrop
+        state.cropExtend = Preferences.cropExtend
         savedState = state
         loadBackgroundImageIfNeeded()
         scheduleRender()
@@ -247,6 +278,7 @@ final class EditorModel: ObservableObject {
         state.crop = state.crop.map(op.transform)
         if isCropping {
             pendingCrop = op.transform(pendingCrop)
+            cropCanvas = op.transform(cropCanvas)
             // A fixed aspect ratio is defined in output pixels, so re-fit it.
             applyAspectToPendingCrop()
         }
@@ -257,18 +289,23 @@ final class EditorModel: ObservableObject {
     func beginCrop() {
         guard !isCropping else { return }
         pendingCrop = state.crop ?? Self.fullRect
+        cropCanvas = makeCropCanvas(around: pendingCrop)
+        pendingCropExtend = state.cropExtend
         isCropping = true
         scheduleRender()
     }
 
     func commitCrop() {
         guard isCropping else { return }
-        let isFull = pendingCrop.width > 0.999 && pendingCrop.height > 0.999
+        let r = pendingCrop
+        let isFull = abs(r.minX) < 0.001 && abs(r.minY) < 0.001 && abs(r.maxX - 1) < 0.001 && abs(r.maxY - 1) < 0.001
         let newCrop: CGRect? = isFull ? nil : pendingCrop
         isCropping = false
-        if newCrop != state.crop {
+        Preferences.cropExtend = pendingCropExtend
+        if newCrop != state.crop || pendingCropExtend != state.cropExtend {
             checkpoint()
             state.crop = newCrop
+            state.cropExtend = pendingCropExtend
         } else {
             scheduleRender()
         }
@@ -283,6 +320,25 @@ final class EditorModel: ObservableObject {
     func resetPendingCrop() {
         pendingCrop = Self.fullRect
         applyAspectToPendingCrop()
+        refitCropCanvas()
+    }
+
+    /// Zooms the crop view in or out to fit the crop (call when a drag ends),
+    /// so there is always room to drag it further.
+    func refitCropCanvas() {
+        guard isCropping else { return }
+        let canvas = makeCropCanvas(around: pendingCrop)
+        guard canvas != cropCanvas else { return }
+        cropCanvas = canvas
+        scheduleRender()
+    }
+
+    /// The image and `crop`, padded on every side.
+    private func makeCropCanvas(around crop: CGRect) -> CGRect {
+        let size = orientedPixelSize
+        let content = Self.fullRect.union(crop)
+        let pad = max(max(content.width * size.width, content.height * size.height) * 0.15, 48 * screenshot.scale)
+        return content.insetBy(dx: -pad / size.width, dy: -pad / size.height)
     }
 
     /// Width/height ratio in normalized crop space for the chosen aspect, if any.
@@ -313,7 +369,11 @@ final class EditorModel: ObservableObject {
         let token = latestRender.next()
         var state = self.state
         if let regionDraft { state.annotations.append(regionDraft) }
-        let applyCrop = !isCropping
+        let isCropping = self.isCropping
+        if isCropping { state.cropExtend = pendingCropExtend }
+        let fillPixel = state.cropExtend == .commonColor ? commonEdgePixel : nil
+        // While cropping, show the whole canvas so the crop can be dragged past the edges.
+        let crop = isCropping ? cropCanvas : state.crop
         let source = previewSource
         let colorSpace = self.colorSpace
         let latest = latestRender
@@ -330,18 +390,26 @@ final class EditorModel: ObservableObject {
             let output = Self.render(
                 source,
                 state: state,
-                applyCrop: applyCrop,
+                crop: crop,
+                fillPixel: fillPixel,
                 sourceScale: previewScale,
                 pixelsPerPoint: pixelsPerPoint,
                 includeVectorAnnotations: includeVector
             )
-            var image = Self.context.createCGImage(output, from: output.extent, format: .RGBA8, colorSpace: colorSpace)
-            if applyCrop, let content = image {
-                image = state.backdrop.compose(content, pixelsPerPoint: pixelsPerPoint, backgroundImage: backgroundImage)
+            // A crop reaching far past the image can be huge; the preview only needs to fill the window.
+            let maxDimension: CGFloat = 4096
+            let largest = max(output.extent.width, output.extent.height)
+            let shrink = largest > maxDimension ? maxDimension / largest : 1
+            let shrunk = shrink < 1 ? output.transformed(by: CGAffineTransform(scaleX: shrink, y: shrink)) : output
+            var image = Self.context.createCGImage(shrunk, from: shrunk.extent.integral, format: .RGBA8, colorSpace: colorSpace)
+            if !isCropping, let content = image {
+                image = state.backdrop.compose(content, pixelsPerPoint: pixelsPerPoint * shrink, backgroundImage: backgroundImage)
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self, latest.isCurrent(token) else { return }
                 self.preview = image
+                self.previewShrink = shrink
+                if let crop, isCropping { self.previewCropCanvas = crop }
             }
         }
     }
@@ -352,7 +420,8 @@ final class EditorModel: ObservableObject {
         let output = Self.render(
             fullSource,
             state: state,
-            applyCrop: true,
+            crop: state.crop,
+            fillPixel: state.cropExtend == .commonColor ? commonEdgePixel : nil,
             sourceScale: 1,
             pixelsPerPoint: screenshot.scale,
             includeVectorAnnotations: true
@@ -363,19 +432,64 @@ final class EditorModel: ObservableObject {
         return state.backdrop.compose(content, pixelsPerPoint: screenshot.scale, backgroundImage: currentBackgroundImage)
     }
 
+    /// - crop: normalized rect in the oriented image; parts past its edges repeat the edge pixels,
+    ///   or are filled with `fillPixel` (a 1×1 source pixel, adjusted like the image) when given.
     /// - sourceScale: `source` pixels per full-resolution pixel (annotations are in full-res pixels).
     /// - pixelsPerPoint: `source` pixels per screen point, for sizing blur/pixelate.
     nonisolated static func render(
         _ source: CIImage,
         state: EditState,
-        applyCrop: Bool,
+        crop: CGRect?,
+        fillPixel: CIImage?,
         sourceScale: CGFloat,
         pixelsPerPoint: CGFloat,
         includeVectorAnnotations: Bool
     ) -> CIImage {
-        var image = source
-        let a = state.adjustments
+        var image = applyAdjustments(state.adjustments, to: source).cropped(to: source.extent)
+        image = applyRegionEffects(state.annotations, to: image, sourceScale: sourceScale, pixelsPerPoint: pixelsPerPoint)
 
+        for op in state.orientation {
+            let transform: CGAffineTransform
+            switch op {
+            // Core Image is y-up, so a visual clockwise turn is a negative angle.
+            case .rotateRight: transform = CGAffineTransform(rotationAngle: -.pi / 2)
+            case .rotateLeft: transform = CGAffineTransform(rotationAngle: .pi / 2)
+            case .flipHorizontal: transform = CGAffineTransform(scaleX: -1, y: 1)
+            case .flipVertical: transform = CGAffineTransform(scaleX: 1, y: -1)
+            }
+            image = image.transformed(by: transform).movedToOrigin()
+        }
+
+        // Source pixels (top-left origin) → output pixels (top-left origin), for vector annotations.
+        var toOutput = CGAffineTransform(scaleX: sourceScale, y: sourceScale)
+            .concatenating(orientationTransform(size: source.extent.size, orientation: state.orientation).transform)
+
+        if let crop {
+            // Whole pixels, top-left origin, rounded the same way as sourceToCanvas.
+            let e = image.extent
+            let left = (crop.minX * e.width).rounded(), top = (crop.minY * e.height).rounded()
+            let width = (crop.width * e.width).rounded(), height = (crop.height * e.height).rounded()
+            let rect = CGRect(x: e.minX + left, y: e.maxY - top - height, width: width, height: height)
+            // Fill any part of the crop past the image: repeat the edge pixels outward, or use one solid color.
+            let extended = if let fillPixel {
+                image.composited(over: applyAdjustments(state.adjustments, to: fillPixel).cropped(to: fillPixel.extent).clampedToExtent())
+            } else {
+                image.clampedToExtent()
+            }
+            image = extended.cropped(to: rect).movedToOrigin()
+            toOutput = toOutput.concatenating(CGAffineTransform(translationX: -left, y: -top))
+        }
+
+        // Drawn after cropping so annotations placed past the image's edges aren't clipped.
+        if includeVectorAnnotations,
+           let overlay = AnnotationRenderer.rasterize(state.annotations, pixelSize: image.extent.size, transform: toOutput) {
+            image = CIImage(cgImage: overlay).composited(over: image)
+        }
+        return image
+    }
+
+    nonisolated private static func applyAdjustments(_ a: Adjustments, to input: CIImage) -> CIImage {
+        var image = input
         if a.exposure != 0 {
             image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: a.exposure])
         }
@@ -399,50 +513,16 @@ final class EditorModel: ObservableObject {
         if a.hue != 0 {
             image = image.applyingFilter("CIHueAdjust", parameters: [kCIInputAngleKey: a.hue * .pi / 180])
         }
-        image = image.cropped(to: source.extent)
-        image = applyAnnotations(
-            state.annotations,
-            to: image,
-            sourceScale: sourceScale,
-            pixelsPerPoint: pixelsPerPoint,
-            includeVector: includeVectorAnnotations
-        )
-
-        for op in state.orientation {
-            let transform: CGAffineTransform
-            switch op {
-            // Core Image is y-up, so a visual clockwise turn is a negative angle.
-            case .rotateRight: transform = CGAffineTransform(rotationAngle: -.pi / 2)
-            case .rotateLeft: transform = CGAffineTransform(rotationAngle: .pi / 2)
-            case .flipHorizontal: transform = CGAffineTransform(scaleX: -1, y: 1)
-            case .flipVertical: transform = CGAffineTransform(scaleX: 1, y: -1)
-            }
-            image = image.transformed(by: transform).movedToOrigin()
-        }
-
-        if applyCrop, let crop = state.crop {
-            let e = image.extent
-            let rect = CGRect(
-                x: e.minX + crop.minX * e.width,
-                y: e.minY + (1 - crop.maxY) * e.height,
-                width: crop.width * e.width,
-                height: crop.height * e.height
-            ).integral
-            image = image.cropped(to: rect).movedToOrigin()
-        }
         return image
     }
 
-    /// Blur/pixelate regions are Core Image effects on the pixels underneath;
-    /// everything else is rasterized with AnnotationRenderer and composited on top.
-    nonisolated private static func applyAnnotations(
+    /// Blur/pixelate regions are Core Image effects on the pixels underneath.
+    nonisolated private static func applyRegionEffects(
         _ annotations: [Annotation],
         to input: CIImage,
         sourceScale: CGFloat,
-        pixelsPerPoint: CGFloat,
-        includeVector: Bool
+        pixelsPerPoint: CGFloat
     ) -> CIImage {
-        guard !annotations.isEmpty else { return input }
         let extent = input.extent
         var image = input
 
@@ -467,12 +547,6 @@ final class EditorModel: ObservableObject {
                 ])
             }
             image = effect.cropped(to: region).composited(over: image)
-        }
-
-        if includeVector,
-           let overlay = AnnotationRenderer.rasterize(annotations, pixelSize: extent.size, scale: sourceScale) {
-            let placed = CIImage(cgImage: overlay).transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
-            image = placed.composited(over: image)
         }
         return image
     }
@@ -556,23 +630,12 @@ final class EditorModel: ObservableObject {
     /// (top-left origin): orientation, then crop, then backdrop padding.
     /// Also returns the canvas size and where the screenshot sits in it.
     func sourceToCanvas() -> (transform: CGAffineTransform, canvasSize: CGSize, contentRect: CGRect) {
-        var transform = CGAffineTransform.identity
-        var w = CGFloat(screenshot.image.width), h = CGFloat(screenshot.image.height)
-
-        for op in state.orientation {
-            // x' = a·x + c·y + tx,  y' = b·x + d·y + ty
-            let step: CGAffineTransform = switch op {
-            case .rotateRight: CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: h, ty: 0)
-            case .rotateLeft: CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: w)
-            case .flipHorizontal: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: w, ty: 0)
-            case .flipVertical: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: h)
-            }
-            transform = transform.concatenating(step)
-            if op.swapsAxes { swap(&w, &h) }
-        }
+        let source = CGSize(width: screenshot.image.width, height: screenshot.image.height)
+        var (transform, oriented) = Self.orientationTransform(size: source, orientation: state.orientation)
+        var w = oriented.width, h = oriented.height
 
         if let crop = state.crop {
-            transform = transform.concatenating(CGAffineTransform(translationX: -crop.minX * w, y: -crop.minY * h))
+            transform = transform.concatenating(CGAffineTransform(translationX: -(crop.minX * w).rounded(), y: -(crop.minY * h).rounded()))
             w = (crop.width * w).rounded()
             h = (crop.height * h).rounded()
         }
@@ -585,6 +648,67 @@ final class EditorModel: ObservableObject {
         let y = canvas.height - yUp - h
         transform = transform.concatenating(CGAffineTransform(translationX: x, y: y))
         return (transform, canvas, CGRect(x: x, y: y, width: w, height: h))
+    }
+
+    /// Where (in Core Image's y-up pixel coordinates) the most common color on the
+    /// image's 1px border first appears. Exact matches, not an average, so a solid
+    /// background wins even when the border also crosses other content.
+    nonisolated static func mostCommonEdgePixel(of image: CGImage) -> CGPoint? {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0,
+              let context = CGContext(
+                  data: nil, width: w, height: 1, bitsPerComponent: 8, bytesPerRow: w * 4,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ),
+              let data = context.data else { return nil }
+        let pixels = data.bindMemory(to: UInt32.self, capacity: w)
+
+        var counts: [UInt32: Int] = [:]
+        var firstSeen: [UInt32: CGPoint] = [:]
+        // Read one row or column at a time (top-left origin) so a large image is never fully decoded.
+        func scan(_ strip: CGRect, _ point: (Int) -> CGPoint) {
+            guard let cropped = image.cropping(to: strip) else { return }
+            let length = Int(max(strip.width, strip.height))
+            context.clear(CGRect(x: 0, y: 0, width: w, height: 1))
+            if strip.width >= strip.height {
+                context.draw(cropped, in: CGRect(x: 0, y: 0, width: length, height: 1))
+            } else {
+                // Lay the column out horizontally: its top pixel at x = 0.
+                context.saveGState()
+                context.translateBy(x: CGFloat(length), y: 0)
+                context.rotate(by: .pi / 2)
+                context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: length))
+                context.restoreGState()
+            }
+            for i in 0..<length {
+                let pixel = pixels[i]
+                counts[pixel, default: 0] += 1
+                if firstSeen[pixel] == nil { firstSeen[pixel] = point(i) }
+            }
+        }
+        scan(CGRect(x: 0, y: 0, width: w, height: 1)) { CGPoint(x: $0, y: h - 1) }
+        scan(CGRect(x: 0, y: h - 1, width: w, height: 1)) { CGPoint(x: $0, y: 0) }
+        scan(CGRect(x: 0, y: 0, width: 1, height: h)) { CGPoint(x: 0, y: h - 1 - $0) }
+        scan(CGRect(x: w - 1, y: 0, width: 1, height: h)) { CGPoint(x: w - 1, y: h - 1 - $0) }
+        return counts.max { $0.value < $1.value }.flatMap { firstSeen[$0.key] }
+    }
+
+    /// Maps an image of `size` (top-left origin) through `orientation`; also returns the oriented size.
+    nonisolated static func orientationTransform(size: CGSize, orientation: [OrientationOp]) -> (transform: CGAffineTransform, size: CGSize) {
+        var transform = CGAffineTransform.identity
+        var w = size.width, h = size.height
+        for op in orientation {
+            // x' = a·x + c·y + tx,  y' = b·x + d·y + ty
+            let step: CGAffineTransform = switch op {
+            case .rotateRight: CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: h, ty: 0)
+            case .rotateLeft: CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: w)
+            case .flipHorizontal: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: w, ty: 0)
+            case .flipVertical: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: h)
+            }
+            transform = transform.concatenating(step)
+            if op.swapsAxes { swap(&w, &h) }
+        }
+        return (transform, CGSize(width: w, height: h))
     }
 
     // MARK: - Output
