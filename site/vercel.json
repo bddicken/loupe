@@ -1,0 +1,15 @@
+{
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*)\\.dmg",
+      "headers": [
+        { "key": "Content-Type", "value": "application/x-apple-diskimage" },
+        { "key": "Content-Disposition", "value": "attachment" }
+      ]
+    }
+  ],
+  "redirects": [
+    { "source": "/download", "destination": "{{DOWNLOAD_PATH}}", "permanent": false }
+  ]
+}

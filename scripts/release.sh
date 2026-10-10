@@ -69,15 +69,24 @@ fi
 
 # Landing page.
 SITE="$DIST/site"
+# Keep the Vercel project link (dist/site/.vercel) across regenerations.
+VERCEL_LINK="$(mktemp -d)"
+[[ -d "$SITE/.vercel" ]] && mv "$SITE/.vercel" "$VERCEL_LINK/"
 rm -rf "$SITE"
 mkdir -p "$SITE"
+[[ -d "$VERCEL_LINK/.vercel" ]] && mv "$VERCEL_LINK/.vercel" "$SITE/"
+rmdir "$VERCEL_LINK" 2>/dev/null || true
 sips -Z 512 "$ROOT/Resources/AppIcon.png" --out "$SITE/icon.png" >/dev/null
 if [[ -n "${LOUPE_DOWNLOAD_URL:-}" ]]; then
   export PAGE_URL="$LOUPE_DOWNLOAD_URL"
+  export DOWNLOAD_PATH="$LOUPE_DOWNLOAD_URL"
 else
   cp "$DMG" "$SITE/"
   export PAGE_URL="Loupe-$VERSION.dmg"
+  export DOWNLOAD_PATH="/Loupe-$VERSION.dmg"
 fi
+# Vercel config: DMG download headers and a stable /download link to this release.
+perl -pe 's/\{\{DOWNLOAD_PATH\}\}/$ENV{DOWNLOAD_PATH}/g' "$ROOT/site/vercel.json" > "$SITE/vercel.json"
 export PAGE_VERSION="$VERSION"
 if (( NOTARIZED )); then
   export PAGE_GK_OPEN=""
