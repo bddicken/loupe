@@ -31,8 +31,11 @@ so the login item doesn't point at the build folder.
 scripts/release.sh 0.2.0
 ```
 
-This builds `dist/Loupe-0.2.0.dmg` (universal app plus an Applications shortcut) and prints its SHA-256
-for the download page. Send recipients [INSTALL.md](INSTALL.md).
+This builds `dist/Loupe-0.2.0.dmg` (universal app plus an Applications shortcut) and `dist/site/`: the
+landing page from `site/index.html`, filled in with the version, size and date, with the DMG next to it.
+Upload `dist/site/` to any static host (GitHub Pages, Netlify, Cloudflare Pages, S3). To host the DMG
+somewhere else, such as a GitHub Release asset, set `LOUPE_DOWNLOAD_URL=…` and the DMG is left out of the
+folder. Preview it locally with `python3 -m http.server --directory dist/site`.
 
 - **With a Developer ID certificate** (Apple Developer Program), the script signs the app and DMG with the
   hardened runtime, notarizes them, and staples the ticket, so they open with no warnings. One-time setup:

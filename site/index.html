@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loupe — Screenshots for Mac</title>
+  <meta name="description" content="Loupe is a fast, native screenshot tool for macOS: capture, mark up, and polish screenshots in seconds.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <meta property="og:title" content="Loupe — Screenshots for Mac">
+  <meta property="og:description" content="Capture, mark up, and polish screenshots in seconds.">
+  <meta property="og:image" content="icon.png">
+  <style>
+    :root {
+      --bg: #fbfbfd;
+      --surface: #ffffff;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --line: #e5e5ea;
+      --accent: #1d1d1f;
+      --accent-hover: #000000;
+      --accent-text: #ffffff;
+      --link: #0066cc;
+      --kbd-bg: #f2f2f7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0e0e12;
+        --surface: #17171d;
+        --text: #f5f5f7;
+        --muted: #a1a1aa;
+        --line: #2a2a33;
+        --accent: #f5f5f7;
+        --accent-hover: #ffffff;
+        --accent-text: #1d1d1f;
+        --link: #6cb4ff;
+        --kbd-bg: #23232b;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+    a { color: var(--link); }
+
+    .hero { text-align: center; padding: 88px 0 56px; }
+    .hero img { width: 148px; height: 148px; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .22)); }
+    h1 { font-size: 48px; line-height: 1.1; letter-spacing: -0.02em; margin: 20px 0 10px; font-weight: 700; }
+    .tagline { font-size: 20px; color: var(--muted); margin: 0 auto 32px; max-width: 30em; }
+
+    .download {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--accent); color: var(--accent-text); text-decoration: none;
+      font-weight: 600; font-size: 17px;
+      padding: 14px 26px; border-radius: 999px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+      transition: background .15s, transform .15s;
+    }
+    .download:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .download svg { width: 18px; height: 18px; }
+    .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
+
+    section { padding: 40px 0; border-top: 1px solid var(--line); }
+    h2 { font-size: 22px; letter-spacing: -0.01em; margin: 0 0 20px; }
+
+    .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 32px; margin: 0; padding: 0; list-style: none; }
+    .features h3 { font-size: 16px; margin: 0 0 4px; }
+    .features p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { width: 120px; white-space: nowrap; }
+    kbd {
+      font: 13px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      background: var(--kbd-bg); border: 1px solid var(--line); border-bottom-width: 2px;
+      border-radius: 6px; padding: 4px 7px;
+    }
+    .note { color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+    ol { padding-left: 20px; margin: 0; }
+    ol li { margin-bottom: 10px; }
+    details { margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p, details ul { color: var(--muted); font-size: 15px; }
+    code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; background: var(--kbd-bg); padding: 2px 6px; border-radius: 5px; word-break: break-all; }
+
+    footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 13px; text-align: center; }
+
+    @media (max-width: 600px) {
+      .hero { padding: 56px 0 40px; }
+      .hero img { width: 112px; height: 112px; }
+      h1 { font-size: 38px; }
+      .tagline { font-size: 18px; }
+      .features { grid-template-columns: 1fr; }
+      td:first-child { width: 96px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <img src="icon.png" alt="Loupe app icon: a fold-out pocket magnifier">
+      <h1>Loupe</h1>
+      <p class="tagline">A fast, native screenshot tool for macOS. Capture, mark up, and polish screenshots in seconds.</p>
+      <a class="download" href="{{DOWNLOAD_URL}}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+        Download for Mac
+      </a>
+      <div class="meta">Version {{VERSION}} · {{SIZE}} · macOS 14 or later · Apple Silicon &amp; Intel</div>
+    </header>
+
+    <section>
+      <h2>Features</h2>
+      <ul class="features">
+        <li><h3>Area, window &amp; fullscreen</h3><p>Drag to capture, click a window to grab just that window, or adjust the selection before you shoot.</p></li>
+        <li><h3>Markup</h3><p>Arrows, lines, shapes, text, highlighter, numbered steps, plus blur and pixelate for anything sensitive.</p></li>
+        <li><h3>Beautiful backgrounds</h3><p>Gradients, padding, rounded corners and soft shadows, ready to share.</p></li>
+        <li><h3>Edit &amp; adjust</h3><p>Crop with aspect presets, rotate, and tune exposure, contrast, saturation and hue.</p></li>
+        <li><h3>Quick access</h3><p>A thumbnail after every capture: copy, save, edit, or drag straight into another app.</p></li>
+        <li><h3>History, pins &amp; timer</h3><p>Browse recent captures, pin screenshots above other windows, and use a self-timer for menus.</p></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Shortcuts</h2>
+      <table>
+        <tr><td><kbd>⌥⇧4</kbd></td><td>Capture an area (or click a window)</td></tr>
+        <tr><td><kbd>⌥⇧5</kbd></td><td>Capture an area, adjusting it before capturing</td></tr>
+        <tr><td><kbd>⌥⇧3</kbd></td><td>Capture the full screen</td></tr>
+        <tr><td><kbd>⌥⇧6</kbd></td><td>Capture the previous area again</td></tr>
+        <tr><td><kbd>⌥⇧7</kbd></td><td>Capture with a self-timer</td></tr>
+      </table>
+      <p class="note">Every shortcut can be changed in Loupe’s Settings.</p>
+    </section>
+
+    <section>
+      <h2>Install</h2>
+      <ol>
+        <li>Open the downloaded <strong>.dmg</strong> and drag <strong>Loupe</strong> into <strong>Applications</strong>.</li>
+        <li>Open Loupe. Its icon appears in the menu bar.</li>
+        <li>On your first capture, allow Loupe in System Settings → Privacy &amp; Security → <strong>Screen &amp; System Audio Recording</strong>, then reopen Loupe.</li>
+      </ol>
+      <details{{GATEKEEPER_OPEN}}>
+        <summary>“Apple could not verify Loupe”?</summary>
+        <p>{{GATEKEEPER_INTRO}}</p>
+        <ul>
+          <li><strong>macOS 15 and 26:</strong> open Loupe, dismiss the warning, then click <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security.</li>
+          <li><strong>macOS 14:</strong> right-click Loupe in Applications, choose <strong>Open</strong>, then confirm.</li>
+          <li>Or in Terminal: <code>xattr -dr com.apple.quarantine /Applications/Loupe.app</code></li>
+        </ul>
+      </details>
+    </section>
+
+    <footer>
+      Loupe {{VERSION}} · released {{DATE}}
+    </footer>
+  </main>
+</body>
+</html>

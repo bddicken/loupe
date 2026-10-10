@@ -1,6 +1,6 @@
 import AppKit
 
-/// The menu bar glyph: a fold-out loupe (lens arm swung out from its cover),
+/// The menu bar glyph: a fold-out loupe (lens arm swung out from under its cover),
 /// matching the app icon. Drawn as a template so it adapts to light/dark menu bars.
 enum StatusBarIcon {
     static func make() -> NSImage {
@@ -11,17 +11,7 @@ enum StatusBarIcon {
             let arm = paddle(pivot: pivot, pivotRadius: 1.7, length: 8.6, radius: 4.4, angle: 1.0)
             let lensCenter = CGPoint(x: pivot.x + cos(1.0) * 8.6, y: pivot.y + sin(1.0) * 8.6)
 
-            // Cover: solid, with the arm's outline knocked out so the two read as separate parts.
-            context.addPath(cover)
-            context.setFillColor(CGColor(gray: 0, alpha: 1))
-            context.fillPath()
-            context.setBlendMode(.clear)
-            context.addPath(arm)
-            context.setLineWidth(2.6)
-            context.drawPath(using: .fillStroke)
-            context.setBlendMode(.normal)
-
-            // Lens arm: outlined, with the glass left open.
+            // Lens arm (underneath): outlined, with the glass left open.
             context.addPath(arm)
             context.setStrokeColor(CGColor(gray: 0, alpha: 1))
             context.setLineWidth(1.3)
@@ -34,6 +24,20 @@ enum StatusBarIcon {
             context.setLineWidth(0.8)
             context.setLineCap(.round)
             context.strokePath()
+
+            // Cover (on top): knock out a gap around it so the parts read as separate, then fill it.
+            context.setBlendMode(.clear)
+            context.addPath(cover)
+            context.setLineWidth(2.4)
+            context.drawPath(using: .fillStroke)
+            context.setBlendMode(.normal)
+            context.addPath(cover)
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.fillPath()
+            // Pivot rivet, punched through the cover.
+            context.setBlendMode(.clear)
+            context.fillEllipse(in: CGRect(x: pivot.x - 0.7, y: pivot.y - 0.7, width: 1.4, height: 1.4))
+            context.setBlendMode(.normal)
             return true
         }
         image.isTemplate = true

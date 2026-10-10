@@ -14,6 +14,11 @@
 #
 # Without a Developer ID certificate the DMG is still built, but recipients
 # must approve it once on first launch (see INSTALL.md).
+#
+# Also generates dist/site/: the landing page (site/index.html filled in with
+# this release) plus the DMG, ready to upload to any static host. To host the
+# DMG elsewhere (e.g. a GitHub Release asset), set $LOUPE_DOWNLOAD_URL and the
+# DMG is left out of the folder.
 set -euo pipefail
 
 VERSION="${1:-}"
@@ -46,11 +51,13 @@ ln -s /Applications "$STAGING/Applications"
 rm -f "$DMG"
 hdiutil create -volname "Loupe $VERSION" -srcfolder "$STAGING" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
 
+NOTARIZED=0
 if (( SIGNED )); then
   codesign --force --sign "$IDENTITY" --timestamp "$DMG"
   echo "Submitting to Apple for notarization (usually a few minutes)…"
   if xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait; then
     xcrun stapler staple "$DMG"
+    NOTARIZED=1
     spctl --assess --type open --context context:primary-signature -v "$DMG"
     STATUS="signed with Developer ID, notarized and stapled"
   else
@@ -60,9 +67,37 @@ else
   STATUS="NOT notarized (no Developer ID certificate) — recipients must approve it on first launch, see INSTALL.md"
 fi
 
+# Landing page.
+SITE="$DIST/site"
+rm -rf "$SITE"
+mkdir -p "$SITE"
+sips -Z 512 "$ROOT/Resources/AppIcon.png" --out "$SITE/icon.png" >/dev/null
+if [[ -n "${LOUPE_DOWNLOAD_URL:-}" ]]; then
+  export PAGE_URL="$LOUPE_DOWNLOAD_URL"
+else
+  cp "$DMG" "$SITE/"
+  export PAGE_URL="Loupe-$VERSION.dmg"
+fi
+export PAGE_VERSION="$VERSION"
+export PAGE_SIZE="$(du -h "$DMG" | awk '{print $1}')B"
+export PAGE_DATE="$(date '+%B %-d, %Y')"
+if (( NOTARIZED )); then
+  export PAGE_GK_OPEN=""
+  export PAGE_GK_INTRO="Loupe is notarized by Apple, so you shouldn’t see this. If you do:"
+else
+  export PAGE_GK_OPEN=" open"
+  export PAGE_GK_INTRO="This build isn’t notarized by Apple yet, so macOS asks you to confirm it the first time:"
+fi
+perl -pe '
+  s/\{\{DOWNLOAD_URL\}\}/$ENV{PAGE_URL}/g; s/\{\{VERSION\}\}/$ENV{PAGE_VERSION}/g;
+  s/\{\{SIZE\}\}/$ENV{PAGE_SIZE}/g; s/\{\{DATE\}\}/$ENV{PAGE_DATE}/g;
+  s/\{\{GATEKEEPER_OPEN\}\}/$ENV{PAGE_GK_OPEN}/g; s/\{\{GATEKEEPER_INTRO\}\}/$ENV{PAGE_GK_INTRO}/g;
+' "$ROOT/site/index.html" > "$SITE/index.html"
+
 echo
 echo "Built $DMG"
 echo "  version: $VERSION ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist"))"
 echo "  status:  $STATUS"
 echo "  sha256:  $(shasum -a 256 "$DMG" | awk '{print $1}')"
 echo "  size:    $(du -h "$DMG" | awk '{print $1}')"
+echo "  site:    $SITE (upload this folder; download link → $PAGE_URL)"

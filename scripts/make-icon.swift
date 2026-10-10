@@ -1,11 +1,18 @@
 // Generates Resources/AppIcon.icns: a fold-out pocket loupe, lens arm swung
-// partway out of its cover, with magnified pixels showing through the glass.
+// partway out from under its outer cover, with magnified pixels showing through the glass.
 // Usage: swift scripts/make-icon.swift Resources/AppIcon.icns
 import AppKit
 
 let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
+/// The icon is grayscale except for the pixels seen through the lens, so
+/// every color is reduced to its luminance here; the pixels use `color` instead.
 func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor {
+    let gray = 0.299 * r + 0.587 * g + 0.114 * b
+    return CGColor(srgbRed: gray, green: gray, blue: gray, alpha: a)
+}
+
+func color(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: r, green: g, blue: b, alpha: a)
 }
 
@@ -51,7 +58,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     ctx.addPath(bodyPath)
     ctx.clip()
     ctx.drawLinearGradient(
-        gradient([rgb(0.36, 0.42, 0.98), rgb(0.22, 0.14, 0.62)]),
+        gradient([rgb(0.84, 0.84, 0.86), rgb(0.52, 0.52, 0.55)]),
         start: CGPoint(x: 300, y: body.maxY), end: CGPoint(x: 724, y: body.minY),
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
@@ -63,7 +70,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     )
 
     // MARK: Loupe geometry
-    let pivot = CGPoint(x: 285, y: 300)
+    let pivot = CGPoint(x: 271, y: 324)
     let caseAngle: CGFloat = 0.10 // the cover, nearly flat
     let lensAngle: CGFloat = 1.00 // the lens arm, swung out ~50°
     let armLength: CGFloat = 385
@@ -74,37 +81,6 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     let armPath = paddle(pivot: pivot, pivotRadius: pivotRadius, length: armLength, radius: lensRadius, angle: lensAngle)
     let lensCenter = CGPoint(x: pivot.x + cos(lensAngle) * armLength, y: pivot.y + sin(lensAngle) * armLength)
     let caseCenter = CGPoint(x: pivot.x + cos(caseAngle) * armLength, y: pivot.y + sin(caseAngle) * armLength)
-
-    // MARK: Cover (dark leather-like case, behind)
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 30, color: CGColor(gray: 0, alpha: 0.45))
-    ctx.addPath(casePath)
-    ctx.setFillColor(rgb(0.13, 0.13, 0.17))
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    ctx.saveGState()
-    ctx.addPath(casePath)
-    ctx.clip()
-    ctx.drawLinearGradient(
-        gradient([rgb(0.30, 0.30, 0.36), rgb(0.10, 0.10, 0.13)]),
-        start: CGPoint(x: caseCenter.x, y: caseCenter.y + lensRadius), end: CGPoint(x: caseCenter.x, y: caseCenter.y - lensRadius),
-        options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-    )
-    // Embossed ring where the lens sits when folded.
-    ctx.addArc(center: caseCenter, radius: lensRadius - 62, startAngle: 0, endAngle: .pi * 2, clockwise: false)
-    ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
-    ctx.setLineWidth(10)
-    ctx.strokePath()
-    ctx.addArc(center: CGPoint(x: caseCenter.x, y: caseCenter.y - 4), radius: lensRadius - 62, startAngle: .pi * 1.1, endAngle: .pi * 1.9, clockwise: false)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.10))
-    ctx.setLineWidth(4)
-    ctx.strokePath()
-    ctx.restoreGState()
-    ctx.addPath(casePath)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.16))
-    ctx.setLineWidth(5)
-    ctx.strokePath()
 
     // MARK: Lens arm (polished metal)
     ctx.saveGState()
@@ -153,15 +129,15 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
 
     // Magnified pixels seen through the lens (a nod to screenshots).
     let cell: CGFloat = 54
-    let palette = [rgb(1, 0.42, 0.42), rgb(1, 0.78, 0.3), rgb(0.4, 0.86, 0.6), rgb(0.42, 0.7, 1), rgb(0.95, 0.95, 1)]
+    let palette = [color(1, 0.36, 0.36), color(1, 0.76, 0.22), color(0.3, 0.84, 0.52), color(0.32, 0.62, 1), color(0.72, 0.45, 1)]
     var seed: UInt32 = 7
     for row in -4...4 {
         for column in -4...4 {
             seed = seed &* 1_103_515_245 &+ 12345
-            let color = palette[Int((seed >> 16) % UInt32(palette.count))]
+            let pixelColor = palette[Int((seed >> 16) % UInt32(palette.count))]
             let rect = CGRect(x: lensCenter.x + CGFloat(column) * cell - cell / 2,
                               y: lensCenter.y + CGFloat(row) * cell - cell / 2, width: cell, height: cell)
-            ctx.setFillColor(color.copy(alpha: 0.38)!)
+            ctx.setFillColor(pixelColor.copy(alpha: 0.78)!)
             ctx.fill(rect.insetBy(dx: 3, dy: 3))
         }
     }
@@ -184,6 +160,37 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     ctx.addPath(glass)
     ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.5))
     ctx.setLineWidth(3)
+    ctx.strokePath()
+
+    // MARK: Cover (dark outer case, on top of the lens arm)
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 30, color: CGColor(gray: 0, alpha: 0.45))
+    ctx.addPath(casePath)
+    ctx.setFillColor(rgb(0.13, 0.13, 0.17))
+    ctx.fillPath()
+    ctx.restoreGState()
+
+    ctx.saveGState()
+    ctx.addPath(casePath)
+    ctx.clip()
+    ctx.drawLinearGradient(
+        gradient([rgb(0.30, 0.30, 0.36), rgb(0.10, 0.10, 0.13)]),
+        start: CGPoint(x: caseCenter.x, y: caseCenter.y + lensRadius), end: CGPoint(x: caseCenter.x, y: caseCenter.y - lensRadius),
+        options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+    )
+    // Embossed ring where the lens sits when folded.
+    ctx.addArc(center: caseCenter, radius: lensRadius - 62, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+    ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
+    ctx.setLineWidth(10)
+    ctx.strokePath()
+    ctx.addArc(center: CGPoint(x: caseCenter.x, y: caseCenter.y - 4), radius: lensRadius - 62, startAngle: .pi * 1.1, endAngle: .pi * 1.9, clockwise: false)
+    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.10))
+    ctx.setLineWidth(4)
+    ctx.strokePath()
+    ctx.restoreGState()
+    ctx.addPath(casePath)
+    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.16))
+    ctx.setLineWidth(5)
     ctx.strokePath()
 
     // MARK: Rivet at the pivot
