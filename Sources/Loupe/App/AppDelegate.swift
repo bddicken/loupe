@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Preferences.registerDefaults()
         NSApp.mainMenu = MainMenu.build()
+        _ = UpdateController.shared // Starts Sparkle's scheduled update checks.
         setUpStatusItem()
         ShortcutCenter.shared.apply()
         NotificationCenter.default.addObserver(forName: ShortcutCenter.didChange, object: nil, queue: .main) { [weak self] _ in
@@ -73,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Open Image in Editor…", action: #selector(openImage), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "").target = self
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Quit Loupe", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -84,6 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             shortcut.perform()
         }
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        UpdateController.shared.checkForUpdates(sender)
     }
 
     @objc private func openHistory() {

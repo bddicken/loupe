@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private static var open: [EditorWindowController] = []
+    static var hasOpenEditors: Bool { !open.isEmpty }
 
     private let model: EditorModel
     private var cancellables: Set<AnyCancellable> = []
