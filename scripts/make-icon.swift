@@ -70,7 +70,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     )
 
     // MARK: Loupe geometry
-    let pivot = CGPoint(x: 271, y: 324)
+    let pivot = CGPoint(x: 278, y: 324)
     let caseAngle: CGFloat = 0.10 // the cover, nearly flat
     let lensAngle: CGFloat = 1.00 // the lens arm, swung out ~50°
     let armLength: CGFloat = 385
