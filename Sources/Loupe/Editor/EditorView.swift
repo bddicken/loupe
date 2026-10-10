@@ -113,7 +113,7 @@ struct EditorView: View {
         let radius = backdrop.enabled ? min(backdrop.cornerRadius * scale, min(contentSize.width, contentSize.height) / 2) : 0
         return ZStack {
             if backdrop.enabled {
-                BackdropFillView(fill: backdrop.fill, image: model.backgroundImage)
+                BackdropFillView(backdrop: backdrop, image: model.backgroundImage, pixelsPerPoint: scale)
                     .frame(width: size.width, height: size.height)
                     .clipped()
             }
@@ -583,34 +583,46 @@ private struct BackgroundPanel: View {
     private var options: some View {
         VStack(alignment: .leading, spacing: 12) {
             if backdrop.enabled {
-                LazyVGrid(columns: swatchColumns, alignment: .leading, spacing: 8) {
-                    Swatch(isSelected: backdrop.fill == .transparent, help: "Transparent") {
-                        model.updateBackdrop { $0.fill = .transparent }
-                    } content: {
-                        TransparencyPattern()
-                    }
-
-                    ForEach(GradientPreset.all) { preset in
-                        Swatch(isSelected: backdrop.fill == .gradient(id: preset.id), help: preset.id.capitalized) {
-                            model.updateBackdrop { $0.fill = .gradient(id: preset.id) }
-                        } content: {
-                            let points = preset.swiftUIPoints
-                            LinearGradient(colors: preset.colors.map(\.color), startPoint: points.start, endPoint: points.end)
-                        }
-                    }
-
-                    Swatch(isSelected: isImageFill, help: "Choose Image…", action: model.chooseBackgroundImage) {
-                        ZStack {
-                            Color(nsColor: .controlBackgroundColor)
-                            Image(systemName: "photo")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                ForEach(GradientPreset.Category.allCases) { category in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(category.rawValue)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        LazyVGrid(columns: swatchColumns, alignment: .leading, spacing: 8) {
+                            ForEach(GradientPreset.all.filter { $0.category == category }) { preset in
+                                Swatch(isSelected: backdrop.fill == .gradient(id: preset.id), help: preset.name) {
+                                    model.updateBackdrop { $0.fill = .gradient(id: preset.id) }
+                                } content: {
+                                    PresetSwatch(preset: preset)
+                                }
+                            }
                         }
                     }
                 }
 
-                ColorPicker("Solid color", selection: solidColor, supportsOpacity: true)
-                    .font(.callout)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Other")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Swatch(isSelected: backdrop.fill == .transparent, help: "Transparent") {
+                            model.updateBackdrop { $0.fill = .transparent }
+                        } content: {
+                            TransparencyPattern()
+                        }
+                        Swatch(isSelected: isImageFill, help: "Choose Image…", action: model.chooseBackgroundImage) {
+                            ZStack {
+                                Color(nsColor: .controlBackgroundColor)
+                                Image(systemName: "photo")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        ColorPicker("Solid color", selection: solidColor, supportsOpacity: true)
+                            .font(.callout)
+                            .padding(.leading, 4)
+                    }
+                }
 
                 Picker("Aspect", selection: Binding(
                     get: { backdrop.aspect },
@@ -803,29 +815,36 @@ private final class CanvasGestureView: NSView {
     }
 }
 
-/// Draws a background fill like Backdrop.compose does: gradient, solid color,
-/// aspect-filled image, or nothing (transparent).
+/// Draws a background fill with the same Core Graphics code export uses, so
+/// gradients and textures look identical live and in the saved image.
 private struct BackdropFillView: View {
-    let fill: BackdropFill
+    let backdrop: Backdrop
     let image: CGImage?
+    /// View points per canvas point (texture scale).
+    let pixelsPerPoint: CGFloat
 
     var body: some View {
-        switch fill {
-        case .transparent:
-            Color.clear
-        case let .solid(color):
-            color.color
-        case let .gradient(id):
-            let preset = GradientPreset.named(id)
-            let points = preset.swiftUIPoints
-            LinearGradient(colors: preset.colors.map(\.color), startPoint: points.start, endPoint: points.end)
-        case .image:
-            if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Color.gray
+        Canvas { context, size in
+            context.withCGContext { cg in
+                // SwiftUI's context is y-down; the renderer works y-up like export.
+                cg.translateBy(x: 0, y: size.height)
+                cg.scaleBy(x: 1, y: -1)
+                backdrop.drawFill(in: cg, rect: CGRect(origin: .zero, size: size), backgroundImage: image, pixelsPerPoint: pixelsPerPoint)
+            }
+        }
+    }
+}
+
+/// A preset preview for the swatch grid, drawn by the same renderer.
+private struct PresetSwatch: View {
+    let preset: GradientPreset
+
+    var body: some View {
+        Canvas { context, size in
+            context.withCGContext { cg in
+                cg.translateBy(x: 0, y: size.height)
+                cg.scaleBy(x: 1, y: -1)
+                preset.draw(in: cg, rect: CGRect(origin: .zero, size: size), pixelsPerPoint: 0.7)
             }
         }
     }
