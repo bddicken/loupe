@@ -25,7 +25,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Loupe contributors</string>
+	<string>© 2026 bddicken. MIT License.</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>

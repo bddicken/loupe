@@ -63,3 +63,7 @@ notarized and stapled. See the comments in [scripts/release.sh](scripts/release.
 | `Sources/Loupe/QuickAccess`, `History`, `Pin` | Post-capture thumbnail, history, pinned screenshots |
 | `Sources/Loupe/Support` | Hot keys, shortcuts, preferences, export |
 | `site/` | Landing page template |
+
+## License
+
+[MIT](LICENSE)
