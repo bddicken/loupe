@@ -77,6 +77,7 @@ mkdir -p "$SITE"
 [[ -d "$VERCEL_LINK/.vercel" ]] && mv "$VERCEL_LINK/.vercel" "$SITE/"
 rmdir "$VERCEL_LINK" 2>/dev/null || true
 sips -Z 512 "$ROOT/Resources/AppIcon.png" --out "$SITE/icon.png" >/dev/null
+cp "$ROOT/site/og-image.png" "$SITE/og-image.png"
 if [[ -n "${LOUPE_DOWNLOAD_URL:-}" ]]; then
   export PAGE_URL="$LOUPE_DOWNLOAD_URL"
   export DOWNLOAD_PATH="$LOUPE_DOWNLOAD_URL"

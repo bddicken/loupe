@@ -28,7 +28,7 @@ All shortcuts can be changed in Settings. Requires macOS 14 Sonoma or later (App
 
 ## Install
 
-Download the latest DMG and drag Loupe into Applications. See [INSTALL.md](INSTALL.md) for first-launch
+Download from **[loupe.pics](https://loupe.pics)** and drag Loupe into Applications. See [INSTALL.md](INSTALL.md) for first-launch
 and Screen Recording permission steps.
 
 ## Build from source
@@ -45,13 +45,15 @@ open build/Loupe.app
 ## Release
 
 ```bash
-scripts/release.sh 0.2.0
+scripts/release.sh 0.2.0     # build dist/Loupe-0.2.0.dmg and dist/site/
+scripts/deploy-site.sh       # deploy dist/site/ to https://loupe.pics (Vercel)
 ```
 
 Builds `dist/Loupe-0.2.0.dmg` and `dist/site/`, a ready-to-upload landing page with the DMG. If a
 Developer ID certificate and a `loupe-notary` notarytool profile are available, the DMG is also signed,
 notarized and stapled. See the comments in [scripts/release.sh](scripts/release.sh).
-`swift scripts/make-icon.swift Resources/AppIcon.icns` regenerates the icon.
+`swift scripts/make-icon.swift Resources/AppIcon.icns` regenerates the icon, and
+`swift scripts/make-og-image.swift` regenerates the social preview image (`site/og-image.png`).
 
 ## Project layout
 
