@@ -365,14 +365,37 @@ private struct RecordingQuickAccessView: View {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
+            // Saving over the recording itself: it's already there.
+            if Self.isSameFile(url, recording.fileURL) {
+                dismiss()
+                return
             }
-            try FileManager.default.copyItem(at: recording.fileURL, to: url)
+            if FileManager.default.fileExists(atPath: url.path) {
+                // Copy first, then swap, so a failed copy never loses the existing file.
+                let temporary = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension(url.pathExtension)
+                try FileManager.default.copyItem(at: recording.fileURL, to: temporary)
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+            } else {
+                try FileManager.default.copyItem(at: recording.fileURL, to: url)
+            }
             dismiss()
         } catch {
             NSAlert(error: error).runModal()
         }
+    }
+
+    /// True if both URLs point at the same file (also catches case-only differences
+    /// on case-insensitive volumes, and symlinks).
+    private static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        if a.standardizedFileURL.resolvingSymlinksInPath() == b.standardizedFileURL.resolvingSymlinksInPath() {
+            return true
+        }
+        let key = URLResourceKey.fileResourceIdentifierKey
+        guard let idA = try? a.resourceValues(forKeys: [key]).fileResourceIdentifier,
+              let idB = try? b.resourceValues(forKeys: [key]).fileResourceIdentifier else { return false }
+        return idA.isEqual(idB)
     }
 
     private func open() {

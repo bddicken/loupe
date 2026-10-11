@@ -207,19 +207,10 @@ final class ScreenRecordingController {
         guard let display = content.displays.first(where: { $0.displayID == area.displayID }) else {
             throw RecordingError.displayUnavailable
         }
-        // Leave Loupe's own windows (control bar, outline, thumbnails) out of the
-        // recording, except the click ripples.
-        let filter: SCContentFilter
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        if let app = content.applications.first(where: { $0.processID == ownPID }) {
-            let ripples = overlay.clickLayerWindow.flatMap { window in
-                content.windows.first { $0.windowID == CGWindowID(window.windowNumber) }
-            }
-            filter = SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: ripples.map { [$0] } ?? [])
-        } else {
-            let excluded = overlay.excludedWindowNumbers.union(QuickAccessManager.shared.windowNumbers)
-            filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains(Int($0.windowID)) })
-        }
+        // Leave out only the recording chrome (outline and control bar), so the rest of
+        // Loupe (editor, pins, thumbnails, click ripples) shows up like any other app.
+        let excluded = overlay.excludedWindowNumbers
+        let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains(Int($0.windowID)) })
 
         let rect = area.rect
         let scale = screen.backingScaleFactor
