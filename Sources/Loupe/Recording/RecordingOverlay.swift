@@ -16,7 +16,7 @@ final class RecordingOverlay {
     private let area: CGRect
     private var outline: NSPanel?
     private var controls: NSPanel?
-    private(set) var clickLayerWindow: NSPanel?
+    private var clickLayerWindow: NSPanel?
     private var clickMonitors: [Any] = []
     private var timeLabel: NSTextField?
     private let actions: Actions
