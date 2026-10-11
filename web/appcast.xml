@@ -4,21 +4,19 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.1</title>
-      <pubDate>Sun, 11 Oct 2026 22:26:02 +0000</pubDate>
-      <sparkle:version>43</sparkle:version>
-      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <title>Loupe 1.0.2</title>
+      <pubDate>Sun, 11 Oct 2026 22:44:38 +0000</pubDate>
+      <sparkle:version>49</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.1</h2>
+<h2>Loupe 1.0.2</h2>
 <ul>
-  <li><strong>Screen recording.</strong> Press ⌥⇧8 to record an area, a window or the full screen, then save it as an MP4 or an animated GIF. Recordings start with a 3-second countdown and can include your microphone and computer audio, with clicks highlighted. Stop, restart or discard from the floating control bar, or stop from the menu bar timer.</li>
-  <li>Finished recordings appear as a quick-access thumbnail: copy, save, open, show in Finder, drag into other apps, or save as a GIF.</li>
-  <li><strong>New look:</strong> a blueprint-style app icon, with a matching menu bar icon.</li>
-  <li>10 more background presets.</li>
+  <li><strong>Clearer styling:</strong> click away from a shape to deselect it. Color and size changes apply only to the selected shape, or to the next one you draw when nothing is selected. The toolbar shows which one it's editing.</li>
+  <li>Switching to crop mode or opening the background panel no longer resizes the editor window, and the editor's bottom bar fits narrow windows.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.1/Loupe-1.0.1.dmg" type="application/octet-stream" sparkle:edSignature="tqFPIuMvLKUiTimvWz9BJx1lnRS2zZJhYzbVrNVMYWFgLxmCbJNUdAxKoyx1ya+nDqlxjd7AhrbsC1rWETsYDQ==" length="3059965" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.2/Loupe-1.0.2.dmg" type="application/octet-stream" sparkle:edSignature="QdoFeyI3SOaScchuLToUSGvYYr0lcaAmXEExpFWnGx4Xm+2JZ7eOteuwdDHbTeRN1b6egEa1p6v/bZak6/iGCg==" length="3082414" />
     </item>
   </channel>
 </rss>
