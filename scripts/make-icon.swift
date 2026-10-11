@@ -1,6 +1,6 @@
-// Generates Resources/AppIcon.icns: a fold-out pocket loupe drawn as a grayscale
-// technical wireframe (lens arm swung partway out from under its cover, hidden edges
-// dashed), with colored magnified pixels showing through the glass.
+// Generates Resources/AppIcon.icns: a fold-out pocket loupe drawn as grayscale
+// wireframe line art (lens arm swung partway out from under its cover), with
+// colored magnified pixels showing through the glass.
 // Usage: swift scripts/make-icon.swift Resources/AppIcon.icns
 import AppKit
 
@@ -94,8 +94,7 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
 
     // Wireframe style: grayscale line art on paper; only the pixels in the lens have color.
     let ink = rgb(0.20, 0.20, 0.22)       // primary outlines
-    let pencil = rgb(0.55, 0.55, 0.58)    // secondary detail and hidden edges
-    let guide = rgb(0.68, 0.68, 0.71)     // construction lines
+    let pencil = rgb(0.55, 0.55, 0.58)    // secondary detail
     let paper = rgb(0.985, 0.985, 0.99)   // fills that hide what's behind a part
     let outline: CGFloat = 15
     ctx.setLineCap(.round)
@@ -104,22 +103,6 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     func circle(_ center: CGPoint, _ radius: CGFloat) -> CGRect {
         CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
     }
-    func dashed(_ draw: () -> Void, width: CGFloat, color: CGColor, dash: [CGFloat]) {
-        ctx.saveGState()
-        ctx.setLineDash(phase: 0, lengths: dash)
-        ctx.setLineWidth(width)
-        ctx.setStrokeColor(color)
-        draw()
-        ctx.strokePath()
-        ctx.restoreGState()
-    }
-
-    // MARK: Construction lines (behind everything)
-    dashed({
-        ctx.move(to: pivot); ctx.addLine(to: CGPoint(x: pivot.x + cos(lensAngle) * (armLength + lensRadius + 40), y: pivot.y + sin(lensAngle) * (armLength + lensRadius + 40)))
-        ctx.move(to: pivot); ctx.addLine(to: CGPoint(x: pivot.x + cos(caseAngle) * (armLength + lensRadius + 20), y: pivot.y + sin(caseAngle) * (armLength + lensRadius + 20)))
-    }, width: 3.5, color: guide, dash: [18, 12])
-
     // MARK: Lens arm
     ctx.addPath(armPath)
     ctx.setFillColor(paper)
@@ -162,20 +145,10 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     ctx.addPath(casePath)
     ctx.setFillColor(paper)
     ctx.fillPath()
-    // Hidden edges of the arm under the cover, dashed like a technical drawing.
-    ctx.saveGState()
-    ctx.addPath(casePath)
-    ctx.clip()
-    dashed({ ctx.addPath(armPath) }, width: 5, color: pencil, dash: [16, 12])
-    ctx.restoreGState()
-    // The seat the lens folds into, with its center mark.
+    // The seat the lens folds into.
     ctx.setStrokeColor(pencil)
     ctx.setLineWidth(5)
     ctx.strokeEllipse(in: circle(caseCenter, lensRadius - 62))
-    dashed({
-        ctx.move(to: CGPoint(x: caseCenter.x - 28, y: caseCenter.y)); ctx.addLine(to: CGPoint(x: caseCenter.x + 28, y: caseCenter.y))
-        ctx.move(to: CGPoint(x: caseCenter.x, y: caseCenter.y - 28)); ctx.addLine(to: CGPoint(x: caseCenter.x, y: caseCenter.y + 28))
-    }, width: 3.5, color: guide, dash: [10, 7])
     ctx.addPath(casePath)
     ctx.setStrokeColor(ink)
     ctx.setLineWidth(outline)
@@ -191,11 +164,6 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     ctx.setStrokeColor(pencil)
     ctx.setLineWidth(4)
     ctx.strokeEllipse(in: circle(pivot, 14))
-    // Crosshair centerlines through the pivot.
-    dashed({
-        ctx.move(to: CGPoint(x: pivot.x - 66, y: pivot.y)); ctx.addLine(to: CGPoint(x: pivot.x + 66, y: pivot.y))
-        ctx.move(to: CGPoint(x: pivot.x, y: pivot.y - 66)); ctx.addLine(to: CGPoint(x: pivot.x, y: pivot.y + 66))
-    }, width: 3.5, color: guide, dash: [12, 8])
 
     ctx.restoreGState() // body clip
     NSGraphicsContext.restoreGraphicsState()
