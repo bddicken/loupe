@@ -33,6 +33,15 @@ final class CaptureController {
 
     private var canStart: Bool { session == nil && countdown == nil && !isBusy }
 
+    /// Without Screen Recording permission, macOS still "captures" but returns only
+    /// the wallpaper (or black video), so check first and explain instead.
+    private func hasScreenAccess() -> Bool {
+        if CGPreflightScreenCaptureAccess() { return true }
+        CGRequestScreenCaptureAccess() // Adds Loupe to the list in System Settings.
+        showCaptureError(CocoaError(.userCancelled))
+        return false
+    }
+
     // MARK: - Actions
 
     func captureArea(mode: SelectionSession.Mode) {
@@ -105,7 +114,7 @@ final class CaptureController {
     // MARK: - Steps
 
     private func runSelection(mode: SelectionSession.Mode, completion: @escaping (SelectionSession.Result) -> Void) {
-        guard canStart else { return }
+        guard canStart, hasScreenAccess() else { return }
         isBusy = true
         Task {
             defer { isBusy = false }
@@ -138,6 +147,7 @@ final class CaptureController {
 
     /// Takes a new snapshot of `screen`, optionally cropped to `rect` (screen-local points).
     private func captureFresh(screen: NSScreen, rect: CGRect?) {
+        guard hasScreenAccess() else { return }
         isBusy = true
         Task {
             defer { isBusy = false }
