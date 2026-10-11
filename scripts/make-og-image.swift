@@ -1,5 +1,5 @@
 // Generates site/og-image.png (1200×630): the app icon and the word "Loupe"
-// on a very dark gray background, for link previews.
+// on a white background, for link previews.
 // Usage: swift scripts/make-og-image.swift Resources/AppIcon.png site/og-image.png
 import AppKit
 
@@ -20,12 +20,12 @@ let rep = NSBitmapImageRep(
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 
-NSColor(srgbRed: 0.075, green: 0.075, blue: 0.085, alpha: 1).setFill()
+NSColor.white.setFill()
 NSRect(origin: .zero, size: size).fill()
 
 let title = NSAttributedString(string: "Loupe", attributes: [
     .font: NSFont.systemFont(ofSize: 168, weight: .bold),
-    .foregroundColor: NSColor(white: 0.97, alpha: 1),
+    .foregroundColor: NSColor(srgbRed: 0.11, green: 0.11, blue: 0.12, alpha: 1),
     .kern: -3,
 ])
 let titleSize = title.size()
