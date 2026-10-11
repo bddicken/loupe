@@ -95,12 +95,16 @@ struct GradientPreset: Identifiable {
         GradientPreset("stone", .neutral, [0xDDD7CF, 0xB8B0A5]),
         GradientPreset("slate", .neutral, [0x95A1B5, 0x5E697E]),
         GradientPreset("concrete", .neutral, [0xBDBDBD, 0x8E8E8E], texture: .grain(opacity: 0.35)),
+        GradientPreset("sand", .neutral, [0xEDE7DB, 0xCFC5B2]),
+        GradientPreset("pewter", .neutral, [0xB4B8BF, 0x7C818B], style: .radial),
         // Light
         GradientPreset("cream", .light, [0xFDFCFB, 0xE2D1C3]),
         GradientPreset("peach", .light, [0xFFDEE9, 0xB5FFFC]),
         GradientPreset("blush", .light, [0xFDE8EF, 0xEBDDFB]),
         GradientPreset("mist", .light, [0xE3F6FA, 0xE6E9F7]),
         GradientPreset("butter", .light, [0xFFF6D6, 0xFFE3B3], style: .radial),
+        GradientPreset("lilac", .light, [0xF5F0FF, 0xE1D7FA]),
+        GradientPreset("seafoam", .light, [0xEAFBF5, 0xCDEFE6], angle: -90),
         // Dark
         GradientPreset("midnight", .dark, [0x232526, 0x414345]),
         GradientPreset("graphite", .dark, [0x434343, 0x000000]),
@@ -108,6 +112,8 @@ struct GradientPreset: Identifiable {
         GradientPreset("obsidian", .dark, [0x2D3039, 0x0A0B0E], style: .radial),
         GradientPreset("deepsea", .dark, [0x0F2027, 0x203A43, 0x2C5364]),
         GradientPreset("nightfall", .dark, [0x141E30, 0x243B55], angle: -90),
+        GradientPreset("ember", .dark, [0x5C2A16, 0x2A140C, 0x120807], style: .radial),
+        GradientPreset("abyss", .dark, [0x0B132B, 0x1C2541, 0x3A506B], angle: -60),
         // Colorful
         GradientPreset("sky", .colorful, [0x56CCF2, 0x2F80ED]),
         GradientPreset("ocean", .colorful, [0x2E3192, 0x1BFFFF]),
@@ -121,6 +127,8 @@ struct GradientPreset: Identifiable {
         GradientPreset("lagoon", .colorful, [0x00DBDE, 0x6A5BFF, 0xFC00FF]),
         GradientPreset("tropic", .colorful, [0xF9D423, 0xFF7A3D, 0xE8317A], angle: -30),
         GradientPreset("neon", .colorful, [0xFF2DB4, 0x5B2BD8, 0x1B1464], style: .radial),
+        GradientPreset("flamingo", .colorful, [0xFF9A8B, 0xFF6A88, 0xFF99AC]),
+        GradientPreset("lime", .colorful, [0xD4FC79, 0x56AB2F], angle: -60),
         // Textured
         GradientPreset("paper", .textured, [0xFBF8F1, 0xEFE8DA], texture: .grain(opacity: 0.45)),
         GradientPreset("grainy dusk", .textured, [0x3A1C71, 0xD76D77, 0xFFAF7B], texture: .grain(opacity: 0.5)),
@@ -147,6 +155,10 @@ struct GradientPreset: Identifiable {
                        texture: .isometric(RGBAColor(red: 0.25, green: 0.35, blue: 0.5, alpha: 0.1), spacing: 26)),
         GradientPreset("velvet", .textured, [0x5B2E7A, 0x2A0A3D], style: .radial, grain: 0.55),
         GradientPreset("chalkboard", .textured, [0x34453B, 0x222E28], grain: 0.45),
+        GradientPreset("dot grid", .textured, [0x1B2333, 0x0E131D],
+                       texture: .dots(RGBAColor(red: 1, green: 1, blue: 1, alpha: 0.22), spacing: 14, radius: 1.3)),
+        GradientPreset("sandstone", .textured, [0xE8CBA8, 0xC99A72],
+                       texture: .contours(RGBAColor(red: 0.45, green: 0.25, blue: 0.1, alpha: 0.1), spacing: 11, amplitude: 4), grain: 0.35),
     ]
 
     static func named(_ id: String) -> GradientPreset {

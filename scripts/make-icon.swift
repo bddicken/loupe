@@ -1,5 +1,6 @@
-// Generates Resources/AppIcon.icns: a fold-out pocket loupe, lens arm swung
-// partway out from under its outer cover, with magnified pixels showing through the glass.
+// Generates Resources/AppIcon.icns: a fold-out pocket loupe drawn as grayscale
+// wireframe line art (lens arm swung partway out from under its cover), with
+// colored magnified pixels showing through the glass.
 // Usage: swift scripts/make-icon.swift Resources/AppIcon.icns
 import AppKit
 
@@ -69,6 +70,15 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
         endCenter: CGPoint(x: 330, y: 820), endRadius: 620, options: []
     )
 
+    // Faint drafting grid on the paper.
+    ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.045))
+    ctx.setLineWidth(2)
+    var gridX = body.minX + 32
+    while gridX < body.maxX { ctx.move(to: CGPoint(x: gridX, y: body.minY)); ctx.addLine(to: CGPoint(x: gridX, y: body.maxY)); gridX += 64 }
+    var gridY = body.minY + 32
+    while gridY < body.maxY { ctx.move(to: CGPoint(x: body.minX, y: gridY)); ctx.addLine(to: CGPoint(x: body.maxX, y: gridY)); gridY += 64 }
+    ctx.strokePath()
+
     // MARK: Loupe geometry
     let pivot = CGPoint(x: 278, y: 324)
     let caseAngle: CGFloat = 0.10 // the cover, nearly flat
@@ -82,52 +92,28 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     let lensCenter = CGPoint(x: pivot.x + cos(lensAngle) * armLength, y: pivot.y + sin(lensAngle) * armLength)
     let caseCenter = CGPoint(x: pivot.x + cos(caseAngle) * armLength, y: pivot.y + sin(caseAngle) * armLength)
 
-    // MARK: Lens arm (polished metal)
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 22, color: CGColor(gray: 0, alpha: 0.22))
-    ctx.addPath(armPath)
-    ctx.setFillColor(rgb(0.7, 0.72, 0.76))
-    ctx.fillPath()
-    ctx.restoreGState()
+    // Wireframe style: grayscale line art on paper; only the pixels in the lens have color.
+    let ink = rgb(0.20, 0.20, 0.22)       // primary outlines
+    let pencil = rgb(0.55, 0.55, 0.58)    // secondary detail
+    let paper = rgb(0.985, 0.985, 0.99)   // fills that hide what's behind a part
+    let outline: CGFloat = 15
+    ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
 
-    ctx.saveGState()
+    func circle(_ center: CGPoint, _ radius: CGFloat) -> CGRect {
+        CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+    }
+    // MARK: Lens arm
     ctx.addPath(armPath)
-    ctx.clip()
-    // Brushed-metal banding across the arm.
-    ctx.drawLinearGradient(
-        gradient(
-            [rgb(0.96, 0.97, 0.99), rgb(0.70, 0.72, 0.77), rgb(0.88, 0.90, 0.93), rgb(0.55, 0.57, 0.63), rgb(0.80, 0.82, 0.86)],
-            [0, 0.3, 0.5, 0.75, 1]
-        ),
-        start: CGPoint(x: lensCenter.x - 260, y: lensCenter.y + 260), end: CGPoint(x: lensCenter.x + 200, y: pivot.y - 120),
-        options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-    )
-    ctx.restoreGState()
-    ctx.addPath(armPath)
-    ctx.setStrokeColor(rgb(0.35, 0.37, 0.43, 0.8))
-    ctx.setLineWidth(4)
-    ctx.strokePath()
-
-    // MARK: Glass
-    let glassRadius = lensRadius - 34
-    let glass = CGPath(ellipseIn: CGRect(x: lensCenter.x - glassRadius, y: lensCenter.y - glassRadius,
-                                        width: glassRadius * 2, height: glassRadius * 2), transform: nil)
-    // Inner bevel of the rim.
-    ctx.addPath(CGPath(ellipseIn: CGRect(x: lensCenter.x - glassRadius - 8, y: lensCenter.y - glassRadius - 8,
-                                         width: (glassRadius + 8) * 2, height: (glassRadius + 8) * 2), transform: nil))
-    ctx.setFillColor(rgb(0.38, 0.40, 0.46))
+    ctx.setFillColor(paper)
     ctx.fillPath()
 
+    // Magnified pixels seen through the lens — the only color in the icon.
+    let glassRadius = lensRadius - 40
+    let glass = CGPath(ellipseIn: circle(lensCenter, glassRadius), transform: nil)
     ctx.saveGState()
     ctx.addPath(glass)
     ctx.clip()
-    ctx.drawRadialGradient(
-        gradient([rgb(0.80, 0.92, 1.0), rgb(0.42, 0.66, 0.95), rgb(0.20, 0.36, 0.72)], [0, 0.6, 1]),
-        startCenter: CGPoint(x: lensCenter.x - 50, y: lensCenter.y + 60), startRadius: 0,
-        endCenter: lensCenter, endRadius: glassRadius, options: []
-    )
-
-    // Magnified pixels seen through the lens (a nod to screenshots).
     let cell: CGFloat = 54
     let palette = [color(1, 0.36, 0.36), color(1, 0.76, 0.22), color(0.3, 0.84, 0.52), color(0.32, 0.62, 1), color(0.72, 0.45, 1)]
     var seed: UInt32 = 7
@@ -137,82 +123,47 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
             let pixelColor = palette[Int((seed >> 16) % UInt32(palette.count))]
             let rect = CGRect(x: lensCenter.x + CGFloat(column) * cell - cell / 2,
                               y: lensCenter.y + CGFloat(row) * cell - cell / 2, width: cell, height: cell)
-            ctx.setFillColor(pixelColor.copy(alpha: 0.78)!)
-            ctx.fill(rect.insetBy(dx: 3, dy: 3))
+            ctx.setFillColor(pixelColor.copy(alpha: 0.9)!)
+            ctx.fill(rect.insetBy(dx: 4, dy: 4))
         }
     }
-    // Lens curvature: darker toward the edge.
-    ctx.drawRadialGradient(
-        gradient([CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 0.35)], [0.55, 1]),
-        startCenter: lensCenter, startRadius: 0, endCenter: lensCenter, endRadius: glassRadius, options: []
-    )
-    // Specular highlight.
-    ctx.addEllipse(in: CGRect(x: lensCenter.x - glassRadius * 0.72, y: lensCenter.y + glassRadius * 0.12,
-                              width: glassRadius * 0.95, height: glassRadius * 0.62))
-    ctx.clip()
-    ctx.drawLinearGradient(
-        gradient([CGColor(gray: 1, alpha: 0.75), CGColor(gray: 1, alpha: 0)]),
-        start: CGPoint(x: lensCenter.x, y: lensCenter.y + glassRadius), end: CGPoint(x: lensCenter.x, y: lensCenter.y + glassRadius * 0.1),
-        options: []
-    )
     ctx.restoreGState()
 
+    ctx.addPath(armPath)
+    ctx.setStrokeColor(ink)
+    ctx.setLineWidth(outline)
+    ctx.strokePath()
+    // Glass and the rim's inner edge.
     ctx.addPath(glass)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.5))
-    ctx.setLineWidth(3)
+    ctx.setLineWidth(11)
     ctx.strokePath()
-
-    // MARK: Cover (dark outer case, on top of the lens arm)
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -7), blur: 20, color: CGColor(gray: 0, alpha: 0.2))
-    ctx.addPath(casePath)
-    ctx.setFillColor(rgb(0.13, 0.13, 0.17))
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    ctx.saveGState()
-    ctx.addPath(casePath)
-    ctx.clip()
-    ctx.drawLinearGradient(
-        gradient([rgb(0.30, 0.30, 0.36), rgb(0.10, 0.10, 0.13)]),
-        start: CGPoint(x: caseCenter.x, y: caseCenter.y + lensRadius), end: CGPoint(x: caseCenter.x, y: caseCenter.y - lensRadius),
-        options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-    )
-    // Embossed ring where the lens sits when folded.
-    ctx.addArc(center: caseCenter, radius: lensRadius - 62, startAngle: 0, endAngle: .pi * 2, clockwise: false)
-    ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
-    ctx.setLineWidth(10)
-    ctx.strokePath()
-    ctx.addArc(center: CGPoint(x: caseCenter.x, y: caseCenter.y - 4), radius: lensRadius - 62, startAngle: .pi * 1.1, endAngle: .pi * 1.9, clockwise: false)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.10))
+    ctx.setStrokeColor(pencil)
     ctx.setLineWidth(4)
-    ctx.strokePath()
-    ctx.restoreGState()
+    ctx.strokeEllipse(in: circle(lensCenter, glassRadius + 18))
+
+    // MARK: Cover (on top of the lens arm)
     ctx.addPath(casePath)
-    ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.16))
+    ctx.setFillColor(paper)
+    ctx.fillPath()
+    // The seat the lens folds into.
+    ctx.setStrokeColor(pencil)
     ctx.setLineWidth(5)
+    ctx.strokeEllipse(in: circle(caseCenter, lensRadius - 62))
+    ctx.addPath(casePath)
+    ctx.setStrokeColor(ink)
+    ctx.setLineWidth(outline)
     ctx.strokePath()
 
     // MARK: Rivet at the pivot
     let rivetRadius: CGFloat = 40
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -4), blur: 8, color: CGColor(gray: 0, alpha: 0.5))
-    ctx.addEllipse(in: CGRect(x: pivot.x - rivetRadius, y: pivot.y - rivetRadius, width: rivetRadius * 2, height: rivetRadius * 2))
-    ctx.setFillColor(rgb(0.6, 0.62, 0.66))
-    ctx.fillPath()
-    ctx.restoreGState()
-    ctx.saveGState()
-    ctx.addEllipse(in: CGRect(x: pivot.x - rivetRadius, y: pivot.y - rivetRadius, width: rivetRadius * 2, height: rivetRadius * 2))
-    ctx.clip()
-    ctx.drawLinearGradient(
-        gradient([rgb(0.98, 0.98, 1), rgb(0.48, 0.5, 0.56)]),
-        start: CGPoint(x: pivot.x - rivetRadius, y: pivot.y + rivetRadius), end: CGPoint(x: pivot.x + rivetRadius, y: pivot.y - rivetRadius),
-        options: []
-    )
-    ctx.restoreGState()
-    ctx.addEllipse(in: CGRect(x: pivot.x - 11, y: pivot.y - 11, width: 22, height: 22))
-    ctx.setFillColor(rgb(0.36, 0.38, 0.44))
-    ctx.fillPath()
+    ctx.setFillColor(paper)
+    ctx.fillEllipse(in: circle(pivot, rivetRadius))
+    ctx.setStrokeColor(ink)
+    ctx.setLineWidth(10)
+    ctx.strokeEllipse(in: circle(pivot, rivetRadius))
+    ctx.setStrokeColor(pencil)
+    ctx.setLineWidth(4)
+    ctx.strokeEllipse(in: circle(pivot, 14))
 
     ctx.restoreGState() // body clip
     NSGraphicsContext.restoreGraphicsState()
