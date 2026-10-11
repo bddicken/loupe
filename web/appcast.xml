@@ -4,19 +4,21 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.2</title>
-      <pubDate>Sun, 11 Oct 2026 22:44:38 +0000</pubDate>
-      <sparkle:version>49</sparkle:version>
-      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+      <title>Loupe 1.0.3</title>
+      <pubDate>Sun, 11 Oct 2026 23:00:33 +0000</pubDate>
+      <sparkle:version>57</sparkle:version>
+      <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.2</h2>
+<h2>Loupe 1.0.3</h2>
 <ul>
-  <li><strong>Clearer styling:</strong> click away from a shape to deselect it. Color and size changes apply only to the selected shape, or to the next one you draw when nothing is selected. The toolbar shows which one it's editing.</li>
-  <li>Switching to crop mode or opening the background panel no longer resizes the editor window, and the editor's bottom bar fits narrow windows.</li>
+  <li><strong>Record Loupe itself.</strong> Screen recordings now include Loupe's own windows (the editor, Settings, pinned screenshots and thumbnails). Only the recording outline and control bar are left out.</li>
+  <li>Fixed: choosing <strong>Save As…</strong> on a recording and keeping the same name could delete the recording. Saving over another file now only replaces it once the copy succeeds.</li>
+  <li>If Loupe doesn't have Screen Recording permission, it now says so, instead of saving black recordings or screenshots that show only the wallpaper.</li>
+  <li>Fixed a dark fringe on rounded corners in exported screenshots with a background.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.2/Loupe-1.0.2.dmg" type="application/octet-stream" sparkle:edSignature="QdoFeyI3SOaScchuLToUSGvYYr0lcaAmXEExpFWnGx4Xm+2JZ7eOteuwdDHbTeRN1b6egEa1p6v/bZak6/iGCg==" length="3082414" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.3/Loupe-1.0.3.dmg" type="application/octet-stream" sparkle:edSignature="bBS89HINNVMmIpRxBDjPewlnZYj5Xq9EPIvCwNOXgQ5ILnJxWS1a+OTj7tKJ0rWwmXMI5u7iN0/xMbVSM6b/CA==" length="3083972" />
     </item>
   </channel>
 </rss>
