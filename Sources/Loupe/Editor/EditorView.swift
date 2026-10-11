@@ -7,7 +7,8 @@ struct EditorView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if model.showsBackgroundPanel {
+            // The background panel steps aside while cropping (it doesn't apply there).
+            if model.showsBackgroundPanel && !model.isCropping {
                 BackgroundPanel(model: model)
                     .frame(width: EditorView.backgroundPanelWidth)
                     .transition(.move(edge: .leading).combined(with: .opacity))
@@ -28,7 +29,8 @@ struct EditorView: View {
                 .layoutPriority(1)
         }
         .animation(.easeInOut(duration: 0.2), value: model.showsBackgroundPanel)
-        .frame(minWidth: model.showsBackgroundPanel ? 900 + EditorView.backgroundPanelWidth : 900, minHeight: 500)
+        // A fixed minimum: panels and modes take space from the canvas instead of resizing the window.
+        .frame(minWidth: 900, minHeight: 500)
     }
 
     // MARK: - Canvas
@@ -190,9 +192,11 @@ struct EditorView: View {
                 cropBar(segmentedAspect: true, showSize: true)
                 cropBar(segmentedAspect: false, showSize: true)
                 cropBar(segmentedAspect: false, showSize: false)
+                compactCropBar
             } else {
                 editBar(showSize: true)
                 editBar(showSize: false)
+                compactEditBar
             }
         }
         .controlSize(.large)
@@ -242,6 +246,46 @@ struct EditorView: View {
                 .keyboardShortcut(.cancelAction)
             Button("Done", action: model.commitCrop)
                 .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    /// The narrowest crop bar, for a small window with the sidebar(s) open.
+    private var compactCropBar: some View {
+        HStack(spacing: 8) {
+            Picker("Aspect", selection: $model.cropAspect) {
+                ForEach(CropAspect.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help("Aspect ratio")
+            Spacer(minLength: 4)
+            Button(action: model.resetPendingCrop) { Image(systemName: "arrow.counterclockwise") }
+                .help("Reset crop")
+            Button(action: model.cancelCrop) { Image(systemName: "xmark") }
+                .keyboardShortcut(.cancelAction)
+                .help("Cancel (Esc)")
+            Button("Done", action: model.commitCrop)
+                .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    /// The narrowest edit bar: icons instead of labels.
+    private var compactEditBar: some View {
+        HStack(spacing: 8) {
+            Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                .disabled(!model.canUndo)
+                .help("Undo (⌘Z)")
+            zoomControl
+            Spacer(minLength: 4)
+            Button { model.pin() } label: { Image(systemName: "pin") }
+                .help("Pin to screen")
+            Button { model.copyToPasteboard() } label: { Image(systemName: "doc.on.doc") }
+                .help("Copy to clipboard (⌘C)")
+            Button { model.saveAs() } label: { Image(systemName: "square.and.arrow.down.on.square") }
+                .help("Save to a new location (⇧⌘S)")
+            Button("Save") { model.save() }
+                .buttonStyle(.borderedProminent)
+                .help("Save (⌘S)")
         }
     }
 
@@ -362,9 +406,14 @@ private struct EditorSidebar: View {
     private var backgroundButton: some View {
         if model.state.backdrop.enabled {
             Button {
-                model.showsBackgroundPanel.toggle()
+                if model.isCropping {
+                    model.commitCrop() // finish the crop, then show the background options
+                    model.showsBackgroundPanel = true
+                } else {
+                    model.showsBackgroundPanel.toggle()
+                }
             } label: {
-                Label(model.showsBackgroundPanel ? "Hide Background Options" : "Edit Background", systemImage: "photo.artframe")
+                Label(model.showsBackgroundPanel && !model.isCropping ? "Hide Background Options" : "Edit Background", systemImage: "photo.artframe")
                     .frame(maxWidth: .infinity)
             }
             .controlSize(.large)

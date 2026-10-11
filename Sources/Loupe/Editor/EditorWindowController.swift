@@ -25,7 +25,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         let window = EditorWindow(model: model)
         super.init(window: window)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: EditorView(model: model))
+        let hostingView = NSHostingView(rootView: EditorView(model: model))
+        // Only the user resizes the window: SwiftUI may enforce the minimum size,
+        // but switching modes (crop, background panel) never grows or shrinks it.
+        hostingView.sizingOptions = [.minSize]
+        window.contentView = hostingView
         window.setContentSize(Self.initialContentSize(for: screenshot))
         window.center()
         window.setFrameAutosaveName("") // Each editor opens centered.
@@ -34,13 +38,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         model.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateTitle() }
-            .store(in: &cancellables)
-        // Make room for the background panel instead of squeezing the image.
-        model.$showsBackgroundPanel
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] shows in self?.resizeForBackgroundPanel(shows) }
             .store(in: &cancellables)
         updateTitle()
     }
@@ -53,24 +50,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.title = model.screenshot.fileURL?.lastPathComponent ?? "Screenshot"
         window.representedURL = model.screenshot.fileURL
         window.isDocumentEdited = model.isDirty
-    }
-
-    /// Grows the window leftward (where the panel appears) when it opens, and
-    /// shrinks it back when it closes, staying on screen.
-    private func resizeForBackgroundPanel(_ shows: Bool) {
-        guard let window, let visible = window.screen?.visibleFrame else { return }
-        let delta = EditorView.backgroundPanelWidth + 1
-        var frame = window.frame
-        if shows {
-            frame.size.width += delta
-            frame.origin.x -= delta
-            if frame.minX < visible.minX { frame.origin.x = visible.minX }
-            if frame.maxX > visible.maxX { frame.size.width = visible.maxX - frame.minX }
-        } else {
-            frame.size.width -= delta
-            frame.origin.x += delta
-        }
-        window.setFrame(frame, display: true, animate: true)
     }
 
     private static func initialContentSize(for screenshot: Screenshot) -> NSSize {
