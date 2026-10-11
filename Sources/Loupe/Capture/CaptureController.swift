@@ -43,7 +43,16 @@ final class CaptureController {
                 self?.didCapture(image, scale: scale)
             case let .window(id):
                 self?.captureWindow(id)
+            case .area:
+                break
             }
+        }
+    }
+
+    /// Picks an area, window or display to record (see ScreenRecordingController).
+    func selectRecordingArea(completion: @escaping (CaptureArea) -> Void) {
+        runSelection(mode: .record) { result in
+            if case let .area(area) = result { completion(area) }
         }
     }
 
@@ -80,6 +89,8 @@ final class CaptureController {
                 self.startCountdown(screen: screen, highlight: nil) {
                     self.captureWindow(id)
                 }
+            case .area:
+                break
             }
         }
     }
@@ -185,11 +196,11 @@ final class CaptureController {
         }
     }
 
-    private func showCaptureError(_ error: Error) {
+    func showCaptureError(_ error: Error, title: String = "Couldn’t take screenshot") {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         if CGPreflightScreenCaptureAccess() {
-            alert.messageText = "Couldn’t take screenshot"
+            alert.messageText = title
             alert.informativeText = error.localizedDescription
             alert.runModal()
             return

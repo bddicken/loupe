@@ -17,6 +17,8 @@
 - **Mark up** with arrows, lines, shapes, text, highlighter, numbered steps, blur and pixelate.
 - **Polish** with gradient or image backgrounds, padding, rounded corners and shadows. Crop, rotate, and
   adjust exposure, contrast, saturation and hue.
+- **Record** an area, a window, or the full screen to MP4 or GIF, with a countdown, restart, click
+  highlighting, and optional microphone and computer audio. Stop from the control bar, the menu bar, or the shortcut.
 - **Share**: a quick-access thumbnail after every capture (copy, save, edit, drag), capture history, and
   screenshots pinned above other windows.
 
@@ -27,6 +29,7 @@
 | <kbd>⌥⇧3</kbd> | Capture fullscreen |
 | <kbd>⌥⇧6</kbd> | Capture previous area |
 | <kbd>⌥⇧7</kbd> | Capture with self-timer |
+| <kbd>⌥⇧8</kbd> | Record screen (press again to stop) |
 
 All shortcuts can be changed in Settings. Requires macOS 14 Sonoma or later (Apple Silicon or Intel).
 
@@ -44,7 +47,8 @@ scripts/build-app.sh          # builds build/Loupe.app (universal)
 open build/Loupe.app
 ```
 
-`Loupe --edit image.png` opens an image straight in the editor.
+`Loupe --edit image.png` opens an image straight in the editor. `Loupe --debug-record 5` records the main
+display for 5 seconds (no overlay or countdown) and logs where the file was saved.
 
 ## Release
 

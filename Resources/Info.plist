@@ -34,8 +34,10 @@
 	<string>© 2026 bddicken. MIT License.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Loupe records your microphone during screen recordings when you turn on Record microphone.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Loupe needs screen recording access to take screenshots.</string>
+	<string>Loupe needs screen recording access to take screenshots and record your screen.</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>

@@ -42,7 +42,7 @@ final class SelectionView: NSView {
         }
 
         let cancel = NSButton(title: "Cancel", target: nil, action: nil)
-        let capture = NSButton(title: "Capture", target: nil, action: nil)
+        let capture = NSButton(title: session.mode == .record ? "Record" : "Capture", target: nil, action: nil)
         capture.keyEquivalent = "" // Return is handled in keyDown.
         capture.bezelColor = .controlAccentColor
         buttonBar = NSStackView(views: [cancel, capture])
@@ -97,7 +97,7 @@ final class SelectionView: NSView {
         let point = clamp(snap(convert(event.locationInWindow, from: nil)))
         mouseLocation = point
 
-        if mode == .adjustable, let selection {
+        if mode.isAdjustable, let selection {
             if let handle = handle(at: point, in: selection) {
                 dragState = .resizing(handle, start: point, original: selection)
                 return redraw()
@@ -206,6 +206,11 @@ final class SelectionView: NSView {
         case 53: // Escape
             session?.cancel()
         case 36, 76: // Return, Enter
+            if selection == nil, mode == .record {
+                // Nothing selected: record the whole display.
+                session?.selectionDidBegin(in: self)
+                selection = bounds
+            }
             if selection != nil { session?.capture(from: self) }
         case 123, 124, 125, 126: // Arrows nudge the selection.
             guard var selection, case .none = dragState else { return }
@@ -280,7 +285,7 @@ final class SelectionView: NSView {
     }
 
     private func updateCursor(at point: NSPoint) {
-        guard mode == .adjustable, let selection, case .none = dragState else {
+        guard mode.isAdjustable, let selection, case .none = dragState else {
             if case .moving = dragState { return }
             NSCursor.crosshair.set()
             return
@@ -304,7 +309,7 @@ final class SelectionView: NSView {
     }
 
     private func updateButtonBar() {
-        guard mode == .adjustable, let selection, selection.width >= minimumSize, case .none = dragState else {
+        guard mode.isAdjustable, let selection, selection.width >= minimumSize, case .none = dragState else {
             buttonBar.isHidden = true
             return
         }
@@ -340,7 +345,7 @@ final class SelectionView: NSView {
 
             let isDragging: Bool
             if case .none = dragState { isDragging = false } else { isDragging = true }
-            if mode == .adjustable, !isDragging {
+            if mode.isAdjustable, !isDragging {
                 drawHandles(for: selection, in: context)
             }
             drawSizeLabel(for: selection)
@@ -348,6 +353,10 @@ final class SelectionView: NSView {
 
         if selection == nil, let hoveredWindow {
             drawWindowHighlight(hoveredWindow)
+        }
+        if selection == nil, mode == .record {
+            let hint = pill("Drag to select an area to record, click a window, or press Return to record the full screen. Esc cancels.")
+            hint.draw(at: NSPoint(x: bounds.midX - hint.size.width / 2, y: bounds.maxY - hint.size.height - 48))
         }
 
         guard let mouseLocation else { return }
@@ -380,7 +389,8 @@ final class SelectionView: NSView {
         NSColor.controlAccentColor.setStroke()
         border.stroke()
 
-        let label = pill(window.info.ownerName.isEmpty ? "Click to capture window" : "\(window.info.ownerName) — click to capture")
+        let verb = mode == .quick ? "capture" : "select"
+        let label = pill(window.info.ownerName.isEmpty ? "Click to \(verb) window" : "\(window.info.ownerName) — click to \(verb)")
         let origin = NSPoint(
             x: min(max(frame.midX - label.size.width / 2, bounds.minX + 4), bounds.maxX - label.size.width - 4),
             y: min(max(frame.midY - label.size.height / 2, bounds.minY + 4), bounds.maxY - label.size.height - 4)

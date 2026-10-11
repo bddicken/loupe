@@ -184,6 +184,13 @@ private struct SettingsView: View {
     @AppStorage(Preferences.Key.playSound) private var playSound = true
     @AppStorage(Preferences.Key.imageFormat) private var imageFormat = ImageFormat.png.rawValue
     @AppStorage(Preferences.Key.timerSeconds) private var timerSeconds = 5
+    @AppStorage(Preferences.Key.recordingFormat) private var recordingFormat = RecordingFormat.mp4.rawValue
+    @AppStorage(Preferences.Key.recordingFrameRate) private var recordingFrameRate = 30
+    @AppStorage(Preferences.Key.recordingCountdown) private var recordingCountdown = true
+    @AppStorage(Preferences.Key.recordCursor) private var recordCursor = true
+    @AppStorage(Preferences.Key.highlightClicks) private var highlightClicks = false
+    @AppStorage(Preferences.Key.recordMicrophone) private var recordMicrophone = false
+    @AppStorage(Preferences.Key.recordSystemAudio) private var recordSystemAudio = false
 
     var body: some View {
         Form {
@@ -236,6 +243,28 @@ private struct SettingsView: View {
                         Text(format.displayName).tag(format.rawValue)
                     }
                 }
+            }
+
+            Section {
+                Picker("Format", selection: $recordingFormat) {
+                    ForEach(RecordingFormat.allCases) { Text($0.displayName).tag($0.rawValue) }
+                }
+                Picker("Frame rate", selection: $recordingFrameRate) {
+                    ForEach([30, 60], id: \.self) { Text("\($0) fps").tag($0) }
+                }
+                Toggle("Count down 3 seconds before recording", isOn: $recordingCountdown)
+                Toggle("Show cursor", isOn: $recordCursor)
+                Toggle("Highlight clicks", isOn: $highlightClicks)
+                Toggle("Record microphone", isOn: $recordMicrophone)
+                    .disabled(recordingFormat == RecordingFormat.gif.rawValue)
+                Toggle("Record computer audio", isOn: $recordSystemAudio)
+                    .disabled(recordingFormat == RecordingFormat.gif.rawValue)
+            } header: {
+                Text("Screen recording")
+            } footer: {
+                Text("Stop a recording with the Record Screen shortcut, the menu bar button, or the control bar. GIFs have no sound and are scaled to at most \(Int(GIFExporter.maxDimension)) px at \(GIFExporter.framesPerSecond) fps.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

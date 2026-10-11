@@ -10,11 +10,19 @@ final class SelectionSession {
         /// Drag to create a selection, then move/resize it and press Return
         /// (or click Capture) to take the screenshot.
         case adjustable
+        /// Like `adjustable`, but picks an area to record: a click selects a
+        /// window's frame, and Return with no selection picks the whole display.
+        case record
+
+        /// The selection stays up to be moved and resized before confirming.
+        var isAdjustable: Bool { self != .quick }
     }
 
     enum Result {
         case image(CGImage, scale: CGFloat, area: CaptureArea)
         case window(CGWindowID)
+        /// The confirmed selection, without pixels (`record` mode).
+        case area(CaptureArea)
     }
 
     let mode: Mode
@@ -63,6 +71,11 @@ final class SelectionSession {
     }
 
     func capture(from view: SelectionView) {
+        if mode == .record {
+            guard let selection = view.selection, let displayID = view.snapshot.screen.displayID else { return }
+            finish(with: .area(CaptureArea(displayID: displayID, rect: selection)))
+            return
+        }
         guard let image = view.capturedImage(), let selection = view.selection,
               let displayID = view.snapshot.screen.displayID else { return }
         let area = CaptureArea(displayID: displayID, rect: selection)

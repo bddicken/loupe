@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: ShortcutCenter.didChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.rebuildStatusMenu() }
         }
+        NotificationCenter.default.addObserver(forName: ScreenRecordingController.stateDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateStatusItemForRecording() }
+        }
 
         // `Loupe --edit <image>…` opens images straight in the editor (handy for development).
         let arguments = CommandLine.arguments
@@ -20,6 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for path in arguments[(index + 1)...] {
                 openInEditor(URL(fileURLWithPath: path))
             }
+        }
+
+        if let index = arguments.firstIndex(of: "--debug-record"), index + 1 < arguments.count,
+           let seconds = Double(arguments[index + 1]) {
+            ScreenRecordingController.shared.debugRecord(seconds: seconds)
         }
 
         // `Loupe --debug-status-item` logs where the menu bar icon ended up.
@@ -76,6 +84,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Quit Loupe", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    /// While recording, the menu bar item becomes a stop button with the elapsed time.
+    private func updateStatusItemForRecording() {
+        guard let button = statusItem.button else { return }
+        let recorder = ScreenRecordingController.shared
+        guard recorder.isActive, recorder.state != .countingDown else {
+            if statusItem.menu == nil {
+                statusItem.length = NSStatusItem.squareLength
+                button.image = StatusBarIcon.make()
+                button.title = ""
+                button.toolTip = "Loupe"
+                button.action = nil
+                button.target = nil
+                rebuildStatusMenu()
+            }
+            return
+        }
+        statusItem.menu = nil
+        statusItem.length = NSStatusItem.variableLength
+        button.target = self
+        button.action = #selector(stopRecording)
+        button.imagePosition = .imageLeading
+        if recorder.state == .finishing {
+            button.image = NSImage(systemSymbolName: "hourglass", accessibilityDescription: "Saving recording")
+            button.title = ""
+            button.toolTip = "Saving recording…"
+        } else {
+            button.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: "Stop Recording")
+            button.title = " " + RecordingOverlay.format(recorder.elapsed)
+            button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            button.toolTip = "Stop Recording"
+        }
+    }
+
+    @objc private func stopRecording() {
+        ScreenRecordingController.shared.stop()
     }
 
     @objc private func runShortcut(_ sender: NSMenuItem) {

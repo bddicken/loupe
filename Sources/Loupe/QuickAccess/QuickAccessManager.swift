@@ -17,7 +17,21 @@ final class QuickAccessManager {
     var windowNumbers: Set<Int> { Set(panels.map(\.windowNumber)) }
 
     func show(_ screenshot: Screenshot) {
-        let panel = QuickAccessPanel(screenshot: screenshot)
+        let size = QuickAccessPanel.thumbnailSize(forPixels: NSSize(width: screenshot.image.width, height: screenshot.image.height))
+        present(QuickAccessPanel(size: size) { dismiss in
+            QuickAccessView(screenshot: screenshot, size: size, dismiss: dismiss)
+        })
+    }
+
+    func show(_ recording: Recording) {
+        let pixels = recording.thumbnail.map { NSSize(width: $0.width, height: $0.height) } ?? NSSize(width: 16, height: 10)
+        let size = QuickAccessPanel.thumbnailSize(forPixels: pixels)
+        present(QuickAccessPanel(size: size) { dismiss in
+            RecordingQuickAccessView(recording: recording, size: size, dismiss: dismiss)
+        })
+    }
+
+    private func present(_ panel: QuickAccessPanel) {
         panel.onDismiss = { [weak self, weak panel] in
             guard let self, let panel else { return }
             self.dismiss(panel)
@@ -70,8 +84,7 @@ final class QuickAccessPanel: NSPanel {
     var onDismiss: (() -> Void)?
 
     @MainActor
-    init(screenshot: Screenshot) {
-        let size = QuickAccessPanel.thumbnailSize(for: screenshot)
+    init<Content: View>(size: NSSize, content: (_ dismiss: @escaping () -> Void) -> Content) {
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -87,20 +100,15 @@ final class QuickAccessPanel: NSPanel {
         isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        let view = QuickAccessView(
-            screenshot: screenshot,
-            size: size,
-            dismiss: { [weak self] in self?.onDismiss?() }
-        )
-        contentView = FirstMouseHostingView(rootView: view)
+        let dismiss: () -> Void = { [weak self] in self?.onDismiss?() }
+        contentView = FirstMouseHostingView(rootView: content(dismiss))
     }
 
     override var canBecomeKey: Bool { true }
 
-    private static func thumbnailSize(for screenshot: Screenshot) -> NSSize {
+    static func thumbnailSize(forPixels pixel: NSSize) -> NSSize {
         let maxSize = NSSize(width: 220, height: 150)
         let minSize = NSSize(width: 150, height: 96)
-        let pixel = NSSize(width: screenshot.image.width, height: screenshot.image.height)
         let aspect = pixel.width / max(pixel.height, 1)
         var size = NSSize(width: maxSize.width, height: maxSize.width / aspect)
         if size.height > maxSize.height {
@@ -240,6 +248,164 @@ private struct PillButtonStyle: ButtonStyle {
             .background(
                 Capsule().fill(Color.white.opacity(configuration.isPressed ? 0.75 : 0.95))
             )
+    }
+}
+
+/// The thumbnail for a finished screen recording.
+private struct RecordingQuickAccessView: View {
+    let recording: Recording
+    let size: NSSize
+    let dismiss: () -> Void
+
+    private let hoveringState = State(initialValue: false)
+    private var hovering: Bool { hoveringState.wrappedValue }
+    private let exportingState = State(initialValue: false)
+    private var exporting: Bool { exportingState.wrappedValue }
+
+    var body: some View {
+        ZStack {
+            if let thumbnail = recording.thumbnail {
+                Image(nsImage: NSImage(cgImage: thumbnail, size: NSSize(width: thumbnail.width, height: thumbnail.height)))
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+            } else {
+                Color.black
+            }
+
+            if hovering || exporting {
+                Color.black.opacity(0.4)
+
+                if exporting {
+                    ProgressView().controlSize(.small).colorScheme(.dark)
+                } else {
+                    VStack(spacing: 8) {
+                        Button("Copy", action: copy)
+                        Button(recording.isTemporary ? "Save" : "Save As…", action: save)
+                    }
+                    .buttonStyle(PillButtonStyle())
+                }
+
+                VStack {
+                    HStack {
+                        CornerButton(symbol: "xmark", help: "Close", action: dismiss)
+                        Spacer()
+                        CornerButton(symbol: "play.fill", help: "Open", action: open)
+                    }
+                    Spacer()
+                    HStack {
+                        if !recording.isGIF {
+                            CornerButton(symbol: "photo.stack", help: "Save as GIF", action: exportGIF)
+                        }
+                        Spacer()
+                        CornerButton(symbol: "folder", help: "Show in Finder", action: reveal)
+                    }
+                }
+                .padding(6)
+                .disabled(exporting)
+            } else {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text(badge)
+                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.black.opacity(0.65)))
+                    }
+                }
+                .padding(6)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
+        )
+        .onHover { hoveringState.wrappedValue = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .onTapGesture(count: 2, perform: open)
+        .onDrag { NSItemProvider(contentsOf: recording.fileURL) ?? NSItemProvider() }
+    }
+
+    private var badge: String {
+        let time = RecordingOverlay.format(recording.duration.rounded())
+        return recording.isGIF ? "GIF · \(time)" : time
+    }
+
+    private func copy() {
+        RecordingExport.copyToPasteboard(recording.fileURL)
+        dismiss()
+    }
+
+    private func save() {
+        let format: RecordingFormat = recording.isGIF ? .gif : .mp4
+        if recording.isTemporary {
+            let url = RecordingExport.newFileURL(for: recording.date, format: format)
+            do {
+                try FileManager.default.moveItem(at: recording.fileURL, to: url)
+                recording.fileURL = url
+                recording.isTemporary = false
+                dismiss()
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [format == .gif ? .gif : .mpeg4Movie]
+        panel.nameFieldStringValue = recording.fileURL.lastPathComponent
+        panel.directoryURL = Preferences.saveDirectory
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            try FileManager.default.copyItem(at: recording.fileURL, to: url)
+            dismiss()
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private func open() {
+        NSWorkspace.shared.open(recording.fileURL)
+        dismiss()
+    }
+
+    private func reveal() {
+        NSWorkspace.shared.activateFileViewerSelecting([recording.fileURL])
+    }
+
+    /// Writes a GIF next to the movie and shows it as a new thumbnail.
+    private func exportGIF() {
+        let movie = recording.fileURL
+        let directory = recording.isTemporary ? movie.deletingLastPathComponent() : Preferences.saveDirectory
+        var url = directory.appendingPathComponent(RecordingExport.defaultFileName(for: recording.date, format: .gif))
+        if !recording.isTemporary { url = RecordingExport.newFileURL(for: recording.date, format: .gif) }
+        exportingState.wrappedValue = true
+        let source = recording
+        Task { @MainActor in
+            do {
+                try await GIFExporter.export(movie: movie, to: url)
+                let gif = Recording(
+                    fileURL: url, date: source.date, duration: source.duration,
+                    thumbnail: source.thumbnail, scale: source.scale, isTemporary: source.isTemporary
+                )
+                exportingState.wrappedValue = false
+                QuickAccessManager.shared.show(gif)
+            } catch {
+                exportingState.wrappedValue = false
+                NSAlert(error: error).runModal()
+            }
+        }
     }
 }
 

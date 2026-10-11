@@ -69,6 +69,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Autoupdate"
 codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Updater.app"
 codesign "${SIGN_FLAGS[@]}" "$SPARKLE"
-codesign "${SIGN_FLAGS[@]}" --identifier dev.loupe.Loupe "$APP"
+# The entitlements let the hardened runtime use the microphone (for screen recordings).
+codesign "${SIGN_FLAGS[@]}" --identifier dev.loupe.Loupe --entitlements "$ROOT/Resources/Loupe.entitlements" "$APP"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP (signed with: $IDENTITY)"

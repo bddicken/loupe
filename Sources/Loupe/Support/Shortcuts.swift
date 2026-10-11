@@ -9,6 +9,7 @@ enum Shortcut: Int, CaseIterable {
     case previousArea
     case timedArea
     case timedFullscreen
+    case recordScreen
 
     var title: String {
         switch self {
@@ -18,6 +19,7 @@ enum Shortcut: Int, CaseIterable {
         case .previousArea: "Capture Previous Area"
         case .timedArea: "Capture Area with Timer"
         case .timedFullscreen: "Capture Fullscreen with Timer"
+        case .recordScreen: "Record Screen"
         }
     }
 
@@ -31,6 +33,7 @@ enum Shortcut: Int, CaseIterable {
         case .previousArea: return KeyBinding(keyCode: UInt32(kVK_ANSI_6), carbonModifiers: modifiers, keyLabel: "6")
         case .timedArea: return KeyBinding(keyCode: UInt32(kVK_ANSI_7), carbonModifiers: modifiers, keyLabel: "7")
         case .timedFullscreen: return nil
+        case .recordScreen: return KeyBinding(keyCode: UInt32(kVK_ANSI_8), carbonModifiers: modifiers, keyLabel: "8")
         }
     }
 
@@ -43,6 +46,7 @@ enum Shortcut: Int, CaseIterable {
         case .previousArea: CaptureController.shared.capturePreviousArea()
         case .timedArea: CaptureController.shared.captureAreaWithTimer()
         case .timedFullscreen: CaptureController.shared.captureFullscreenWithTimer()
+        case .recordScreen: ScreenRecordingController.shared.toggle()
         }
     }
 }

@@ -26,6 +26,13 @@ enum Preferences {
         static let imageFormat = "imageFormat"
         static let timerSeconds = "timerSeconds"
         static let cropExtend = "cropExtend"
+        static let recordingFormat = "recordingFormat"
+        static let recordingFrameRate = "recordingFrameRate"
+        static let recordingCountdown = "recordingCountdown"
+        static let recordCursor = "recordCursor"
+        static let highlightClicks = "highlightClicks"
+        static let recordMicrophone = "recordMicrophone"
+        static let recordSystemAudio = "recordSystemAudio"
     }
 
     static func registerDefaults() {
@@ -36,6 +43,13 @@ enum Preferences {
             Key.playSound: true,
             Key.imageFormat: ImageFormat.png.rawValue,
             Key.timerSeconds: 5,
+            Key.recordingFormat: RecordingFormat.mp4.rawValue,
+            Key.recordingFrameRate: 30,
+            Key.recordingCountdown: true,
+            Key.recordCursor: true,
+            Key.highlightClicks: false,
+            Key.recordMicrophone: false,
+            Key.recordSystemAudio: false,
         ])
     }
 
@@ -59,6 +73,15 @@ enum Preferences {
     static var showQuickAccess: Bool { registered { UserDefaults.standard.bool(forKey: Key.showQuickAccess) } }
     static var playSound: Bool { registered { UserDefaults.standard.bool(forKey: Key.playSound) } }
     static var timerSeconds: Int { registered { UserDefaults.standard.integer(forKey: Key.timerSeconds) } }
+    static var recordingFrameRate: Int { registered { UserDefaults.standard.integer(forKey: Key.recordingFrameRate) } }
+    static var recordingCountdown: Bool { registered { UserDefaults.standard.bool(forKey: Key.recordingCountdown) } }
+    static var recordCursor: Bool { registered { UserDefaults.standard.bool(forKey: Key.recordCursor) } }
+    static var highlightClicks: Bool { registered { UserDefaults.standard.bool(forKey: Key.highlightClicks) } }
+    static var recordMicrophone: Bool { registered { UserDefaults.standard.bool(forKey: Key.recordMicrophone) } }
+    static var recordSystemAudio: Bool { registered { UserDefaults.standard.bool(forKey: Key.recordSystemAudio) } }
+    static var recordingFormat: RecordingFormat {
+        registered { RecordingFormat(rawValue: UserDefaults.standard.string(forKey: Key.recordingFormat) ?? "") ?? .mp4 }
+    }
 
     /// How the last crop past the image's edges was filled; new edits start from it.
     static var cropExtend: CropExtend {
