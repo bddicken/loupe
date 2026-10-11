@@ -234,9 +234,13 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             return
         }
 
+        // Clicking away from the selected layer deselects it, so toolbar changes
+        // go back to styling the next annotation instead of that layer.
+        model.selectedAnnotationID = nil
+
         switch model.tool {
         case .select:
-            model.selectedAnnotationID = nil
+            break
         case .text:
             beginTextEditing(model.newAnnotation(.text, points: [point]), isNew: true)
         case .step:

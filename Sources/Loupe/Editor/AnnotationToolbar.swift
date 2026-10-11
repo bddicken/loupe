@@ -44,6 +44,16 @@ struct AnnotationToolbar: View {
 
             Divider().frame(height: 20).padding(.horizontal, 8)
 
+            // Make clear what the color/size controls apply to.
+            Text(model.selectedAnnotationID == nil ? "Next" : "Selected")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(model.selectedAnnotationID == nil ? Color.secondary : Color.accentColor)
+                .frame(width: 52, alignment: .trailing)
+                .padding(.trailing, 4)
+                .help(model.selectedAnnotationID == nil
+                      ? "Color and size apply to the next shape you draw"
+                      : "Color and size apply to the selected shape. Click empty space to deselect.")
+
             ForEach(Self.palette, id: \.self) { color in
                 Button {
                     model.setAnnotationColor(color)
@@ -54,7 +64,7 @@ struct AnnotationToolbar: View {
                         .overlay(Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1))
                         .padding(3)
                         .overlay(
-                            Circle().strokeBorder(model.annotationColor == color ? Color.accentColor : .clear, lineWidth: 2)
+                            Circle().strokeBorder(model.toolbarColor == color ? Color.accentColor : .clear, lineWidth: 2)
                         )
                 }
                 .buttonStyle(.plain)
@@ -91,14 +101,14 @@ struct AnnotationToolbar: View {
     /// Picker changes after the first merge into one undo step.
     private var customColor: Binding<Color> {
         Binding(
-            get: { model.annotationColor.color },
+            get: { model.toolbarColor.color },
             set: { model.setAnnotationColor(RGBAColor($0), checkpoint: false) }
         )
     }
 
     private var size: Binding<Double> {
         Binding(
-            get: { model.annotationSize },
+            get: { model.toolbarSize },
             set: { model.setAnnotationSize($0, checkpoint: false) }
         )
     }

@@ -144,19 +144,13 @@ final class EditorModel: ObservableObject {
 
     // Annotation tool settings.
     @Published var tool: AnnotationTool = .arrow
+    /// Color for the next annotation drawn. Selecting a layer doesn't change it.
     @Published private(set) var annotationColor = RGBAColor(hex: 0xFF3B30)
-    /// Stroke width in points; text and counters scale from it.
+    /// Stroke width in points for the next annotation; text and counters scale from it.
     @Published private(set) var annotationSize: Double = 4
-    @Published var selectedAnnotationID: UUID? {
-        didSet {
-            // The toolbar reflects the selected layer's color and size.
-            guard selectedAnnotationID != oldValue, let selected = selectedAnnotation else { return }
-            annotationColor = selected.color
-            if selected.kind != .text, selected.kind != .step {
-                annotationSize = Double(selected.strokeWidth / screenshot.scale)
-            }
-        }
-    }
+    /// The selected layer, if any. While one is selected, the toolbar shows and
+    /// edits its style; otherwise it shows and edits the style for the next annotation.
+    @Published var selectedAnnotationID: UUID?
     /// A blur/pixelate region being dragged out; rendered live but not yet in `state`.
     @Published var regionDraft: Annotation? {
         didSet { if regionDraft != oldValue { scheduleRender() } }
@@ -729,23 +723,40 @@ final class EditorModel: ObservableObject {
         state.annotations.first { $0.id == selectedAnnotationID }
     }
 
-    /// Sets the drawing color, and recolors the selected annotation.
+    /// The color the toolbar shows: the selected layer's, or the next annotation's.
+    var toolbarColor: RGBAColor { selectedAnnotation?.color ?? annotationColor }
+
+    /// The size the toolbar shows: the selected layer's, or the next annotation's.
+    var toolbarSize: Double {
+        guard let selected = selectedAnnotation else { return annotationSize }
+        let pixelsPerPoint = screenshot.scale
+        if selected.kind == .text || selected.kind == .step {
+            return min(max(Double((selected.fontSize / pixelsPerPoint - 10) / 4), 1), 12)
+        }
+        return min(max(Double(selected.strokeWidth / pixelsPerPoint), 1), 12)
+    }
+
+    /// Recolors only the selected layer; with nothing selected, sets the color
+    /// for the next annotation.
     func setAnnotationColor(_ color: RGBAColor, checkpoint shouldCheckpoint: Bool = true) {
-        annotationColor = color
         if let id = selectedAnnotationID {
             updateAnnotation(id, checkpoint: shouldCheckpoint) { $0.color = color }
+        } else {
+            annotationColor = color
         }
     }
 
-    /// Sets the drawing size, and resizes the selected annotation.
+    /// Resizes only the selected layer; with nothing selected, sets the size
+    /// for the next annotation.
     func setAnnotationSize(_ size: Double, checkpoint shouldCheckpoint: Bool) {
-        annotationSize = size
         if let id = selectedAnnotationID {
             let pixelsPerPoint = screenshot.scale
             updateAnnotation(id, checkpoint: shouldCheckpoint) {
                 $0.strokeWidth = size * pixelsPerPoint
                 $0.fontSize = (10 + size * 4) * pixelsPerPoint
             }
+        } else {
+            annotationSize = size
         }
     }
 

@@ -773,6 +773,15 @@ private final class CanvasGestureView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// Clicking the empty canvas around the image deselects the selected layer.
+    override func mouseDown(with event: NSEvent) {
+        MainActor.assumeIsolated {
+            window?.makeFirstResponder(nil)
+            model.selectedAnnotationID = nil
+        }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
