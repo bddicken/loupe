@@ -462,23 +462,35 @@ struct Backdrop: Codable, Equatable {
         let shape = CGPath(roundedRect: imageRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
 
         if shadowOpacity > 0, shadowBlur > 0 || shadowOffset > 0 {
+            // Cast only the shadow: fill the shape off the canvas and offset its shadow
+            // back into place. An opaque fill under the image would bleed through its
+            // anti-aliased rounded edges as a dark fringe.
+            let away = canvas.width + (shadowBlur + shadowOffset) * ppp * 4
             context.saveGState()
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
             // Shadow geometry is in device pixels; y-up, so a downward shadow is negative.
             context.setShadow(
-                offset: CGSize(width: 0, height: -shadowOffset * ppp),
+                offset: CGSize(width: away, height: -shadowOffset * ppp),
                 blur: shadowBlur * ppp,
                 color: CGColor(gray: 0, alpha: shadowOpacity)
             )
+            context.translateBy(x: -away, y: 0)
             context.addPath(shape)
             context.setFillColor(CGColor(gray: 0, alpha: 1))
             context.fillPath()
+            context.translateBy(x: away, y: 0)
+            // Keep the shadow out from under the image so it can't show through transparent pixels.
+            context.setShadow(offset: .zero, blur: 0, color: nil)
+            context.setBlendMode(.destinationOut)
+            context.addPath(shape)
+            context.fillPath()
+            context.endTransparencyLayer()
             context.restoreGState()
         }
 
         context.saveGState()
         context.addPath(shape)
         context.clip()
-        context.clear(imageRect) // Don't let the shadow's fill show through transparent pixels.
         context.draw(content, in: imageRect)
         context.restoreGState()
 
