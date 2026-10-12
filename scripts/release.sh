@@ -9,9 +9,9 @@
 #    also notarized and stapled (one-time setup below).
 # 3. Signs the DMG with your Sparkle key (`generate_keys --account loupe`).
 # 4. Publishes GitHub Release v<version> with the DMG attached.
-# 5. Writes web/ (the loupe.pics site: page, appcast.xml, vercel.json) linking
-#    to that DMG, then commits and pushes. Vercel deploys web/ on push, and
-#    installed copies pick up the update from loupe.pics/appcast.xml.
+# 5. Writes web/ (the loupe.pics site via scripts/build-site.sh, plus
+#    appcast.xml) linking to that DMG, then commits and pushes. Vercel deploys
+#    web/ on push, and installed copies pick up the update from loupe.pics/appcast.xml.
 #
 # --no-publish stops after step 3 and writes web/ without committing, for a
 # local look (preview with `python3 -m http.server --directory web`).
@@ -102,23 +102,11 @@ BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Conten
 
 # --- Site (web/) -----------------------------------------------------------
 WEB="$ROOT/web"
-rm -rf "$WEB"
-mkdir -p "$WEB"
-sips -Z 512 "$ROOT/Resources/AppIcon.png" --out "$WEB/icon.png" >/dev/null
-cp "$ROOT/site/og-image.png" "$ROOT/site/editor.png" "$ROOT/site/robots.txt" "$WEB/"
-
-export PAGE_URL="$DMG_URL" PAGE_VERSION="$VERSION"
 if (( NOTARIZED )); then
-  export PAGE_GK_OPEN="" PAGE_GK_INTRO="Loupe is notarized by Apple, so you shouldn’t see this. If you do:"
+  scripts/build-site.sh "$VERSION" --notarized
 else
-  export PAGE_GK_OPEN=" open" PAGE_GK_INTRO="This build isn’t notarized by Apple yet, so macOS asks you to confirm it the first time:"
+  scripts/build-site.sh "$VERSION"
 fi
-perl -pe '
-  s/\{\{DOWNLOAD_URL\}\}/$ENV{PAGE_URL}/g; s/\{\{VERSION\}\}/$ENV{PAGE_VERSION}/g;
-  s/\{\{GATEKEEPER_OPEN\}\}/$ENV{PAGE_GK_OPEN}/g; s/\{\{GATEKEEPER_INTRO\}\}/$ENV{PAGE_GK_INTRO}/g;
-' "$ROOT/site/index.html" > "$WEB/index.html"
-# Vercel config: a stable /download link to this release.
-DOWNLOAD_PATH="$DMG_URL" perl -pe 's/\{\{DOWNLOAD_PATH\}\}/$ENV{DOWNLOAD_PATH}/g' "$ROOT/site/vercel.json" > "$WEB/vercel.json"
 
 # Sparkle update feed.
 cat > "$WEB/appcast.xml" <<APPCAST

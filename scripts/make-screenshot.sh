@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Renders site/editor.png (the landing page screenshot) from the real editor UI.
+# Renders site/editor.png and site/editor.webp (the landing page screenshot) from the real editor UI.
 # Usage: scripts/make-screenshot.sh
 set -euo pipefail
 ROOT="${0:A:h:h}"
@@ -13,5 +13,7 @@ swiftc -parse-as-library -O -o "$OUT/make-screenshot" scripts/screenshot/main.sw
   -framework ScreenCaptureKit -framework Carbon
 "$OUT/make-screenshot" "$ROOT/site/editor.png"
 
-# Keep the page light: 1800px is plenty for a 1040pt-wide slot at 2x.
+# Keep the page light: 1800px is plenty for a 1040pt-wide slot at 2x. The page
+# serves the WebP (needs `brew install webp`) and falls back to the PNG.
 sips -Z 1800 "$ROOT/site/editor.png" >/dev/null
+cwebp -quiet -q 82 -m 6 "$ROOT/site/editor.png" -o "$ROOT/site/editor.webp"
