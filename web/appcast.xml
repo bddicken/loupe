@@ -4,25 +4,28 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.4</title>
-      <pubDate>Mon, 12 Oct 2026 04:25:14 +0000</pubDate>
-      <sparkle:version>61</sparkle:version>
-      <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+      <title>Loupe 1.0.5</title>
+      <pubDate>Mon, 12 Oct 2026 16:13:23 +0000</pubDate>
+      <sparkle:version>66</sparkle:version>
+      <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.4</h2>
+<h2>Loupe 1.0.5</h2>
 <ul>
-  <li><strong>No more lost edits.</strong> Closing an editor or quitting Loupe with unsaved changes now asks whether to save them.</li>
-  <li><strong>Recordings are kept when saving fails.</strong> If a recording can't be moved to your save folder or converted to a GIF, Loupe tells you and keeps the original video, instead of deleting it.</li>
-  <li>Unsaved recordings stay in the thumbnail stack until you save or discard them. Closing one asks first.</li>
-  <li>If a recording can't be written (for example, the disk is full), it stops right away and tells you, instead of failing only when you press Stop.</li>
-  <li>If a screenshot can't be auto-saved to your folder, Loupe now says so. It's still in Capture History.</li>
-  <li>Text you're still typing is now included when you save, copy or pin. ⌘Z while typing undoes the typing.</li>
-  <li>Text and numbered steps stay upright after rotating or flipping an image.</li>
-  <li>Saving an opened HEIC, TIFF or WebP image now asks where to save a PNG or JPEG, instead of overwriting the original with the wrong format.</li>
+  <li><strong>Edits preview instantly.</strong> Dragging Exposure, Brightness and the other adjustments, background sliders, crop handles or blur regions now updates the image as you drag, instead of lagging behind or jumping once you let go. The preview renders on the GPU at the size it’s shown.</li>
+  <li><strong>Better text.</strong> Everything you type stays visible while you type it. Drag with the Text tool to make a text box that wraps at its width, and drag a text’s left or right edge to change where it wraps. Return starts a new line; Esc or clicking elsewhere finishes.</li>
+  <li><strong>Move and resize anything you’ve added.</strong> Text can be dragged like any other shape, and blur and pixelate regions can be picked up by clicking anywhere inside them.</li>
+  <li>New shapes and text stay selected after you draw them. A color or size you pick then applies to that shape and to the next ones you draw.</li>
+  <li>The toolbar wraps onto more rows in a narrow window instead of hiding controls, and selecting a shape no longer makes the image jump. Editor windows can’t be made narrower than their controls.</li>
+  <li>Color and size dim for blur and pixelate, which don’t use them. The size control shows the size in points and goes twice as thick as before, and a color-wheel button opens the full color picker.</li>
+  <li>Two-finger scrolling moves the image around the canvas at any zoom. Click Fit (or press ⌘0) to center it again.</li>
+  <li>Quitting asks before discarding unsaved recordings, and offers to stop (or wait for) a recording in progress. A new thumbnail is never pushed out of the stack.</li>
+  <li>Screenshots leave out Loupe’s recording outline, control bar and pinned images, and the selection overlay closes if you switch apps or Spaces.</li>
+  <li>Crop opens at the aspect ratio you used last, and Return in record mode records the display under the pointer.</li>
+  <li>Opening Loupe again while it’s running shows Settings, and update checks no longer pull Loupe to the front.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.4/Loupe-1.0.4.dmg" type="application/octet-stream" sparkle:edSignature="l9ngrEXR1my1E2akWg0k8xrAfUAY0kZSya5CzJ2I/wNcQ2B2YD9zvtfQ7eswBbntN0IzXj7i14J5qTzzx0+iBQ==" length="3103787" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.5/Loupe-1.0.5.dmg" type="application/octet-stream" sparkle:edSignature="cjX4zB3z6SUzruu6pOONlSSwTqGJ35/ud1bc/nlbG8Y0yOxYYJhvhgEoWH2F5deK1vZ0tCgqiI1hFnkG3pBGAg==" length="3258677" />
     </item>
   </channel>
 </rss>
