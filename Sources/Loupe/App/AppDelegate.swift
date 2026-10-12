@@ -51,6 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        EditorWindowController.confirmQuit() ? .terminateNow : .terminateCancel
+    }
+
     // MARK: - Status item
 
     private func setUpStatusItem() {

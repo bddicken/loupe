@@ -10,8 +10,16 @@ enum ImageFormat: String, CaseIterable, Identifiable {
     var utType: UTType { self == .png ? .png : .jpeg }
 
     init(url: URL) {
-        let ext = url.pathExtension.lowercased()
-        self = (ext == "jpg" || ext == "jpeg") ? .jpeg : .png
+        self = Self(exactly: url) ?? .png
+    }
+
+    /// The format a file's extension names, or nil if it isn't PNG or JPEG.
+    init?(exactly url: URL) {
+        switch url.pathExtension.lowercased() {
+        case "png": self = .png
+        case "jpg", "jpeg": self = .jpeg
+        default: return nil
+        }
     }
 }
 

@@ -188,6 +188,7 @@ final class CaptureController {
         CaptureSound.play()
         let screenshot = Screenshot(image: image, scale: scale)
 
+        var saveError: Error?
         if Preferences.autoSave {
             let url = ImageExport.newFileURL(for: screenshot.date)
             do {
@@ -195,6 +196,7 @@ final class CaptureController {
                 screenshot.fileURL = url
             } catch {
                 NSLog("Loupe: failed to save screenshot: \(error)")
+                saveError = error
             }
         }
         HistoryStore.shared.add(screenshot)
@@ -203,6 +205,10 @@ final class CaptureController {
         }
         if Preferences.showQuickAccess {
             QuickAccessManager.shared.show(screenshot)
+        }
+        // Still in Capture History (and the thumbnail), but say so rather than pretend it was saved.
+        if let saveError {
+            showCaptureError(saveError, title: "Couldn’t save the screenshot to “\(Preferences.saveDirectory.lastPathComponent)”")
         }
     }
 

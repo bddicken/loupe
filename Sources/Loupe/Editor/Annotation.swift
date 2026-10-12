@@ -135,8 +135,10 @@ extension RGBAColor {
 
 /// Core Graphics drawing for annotations, shared by the live canvas and export.
 /// Draws in source-pixel coordinates into a *flipped* (top-left origin) context.
+/// `orientation` is the source → output transform the context draws through:
+/// text and counter digits undo its rotation/flip so they always read upright.
 enum AnnotationRenderer {
-    static func draw(_ annotation: Annotation, in context: CGContext) {
+    static func draw(_ annotation: Annotation, in context: CGContext, orientation: CGAffineTransform = .identity) {
         context.saveGState()
         defer { context.restoreGState() }
         context.setLineCap(.round)
@@ -177,9 +179,11 @@ enum AnnotationRenderer {
             context.addPath(freehandPath(annotation.points))
             context.strokePath()
         case .text:
+            context.concatenate(upright(about: annotation.start, orientation))
             NSAttributedString(string: annotation.text, attributes: textAttributes(annotation))
                 .draw(at: annotation.start)
         case .step:
+            context.concatenate(upright(about: annotation.start, orientation))
             drawStep(annotation, in: context)
         case .blur, .pixelate:
             break // Rendered by Core Image (they need the pixels underneath).
@@ -196,6 +200,17 @@ enum AnnotationRenderer {
             .foregroundColor: annotation.color.nsColor,
             .shadow: shadow,
         ]
+    }
+
+    /// Undoes the rotation/flip in `orientation` about `anchor` (in source pixels).
+    static func upright(about anchor: CGPoint, _ orientation: CGAffineTransform) -> CGAffineTransform {
+        let t = orientation
+        let scale = sqrt(abs(t.a * t.d - t.b * t.c))
+        guard scale > 0 else { return .identity }
+        let turn = CGAffineTransform(a: t.a / scale, b: t.b / scale, c: t.c / scale, d: t.d / scale, tx: 0, ty: 0)
+        return CGAffineTransform(translationX: -anchor.x, y: -anchor.y)
+            .concatenating(turn.inverted())
+            .concatenating(CGAffineTransform(translationX: anchor.x, y: anchor.y))
     }
 
     static func stepRadius(_ annotation: Annotation) -> CGFloat { annotation.fontSize * 0.75 }
@@ -283,11 +298,11 @@ enum AnnotationRenderer {
     }
 
     /// Bounding box in source pixels, used for selection outlines and hit testing.
-    static func bounds(_ annotation: Annotation) -> CGRect {
+    static func bounds(_ annotation: Annotation, orientation: CGAffineTransform = .identity) -> CGRect {
         switch annotation.kind {
         case .text:
             let size = NSAttributedString(string: annotation.text.isEmpty ? " " : annotation.text, attributes: textAttributes(annotation)).size()
-            return CGRect(origin: annotation.start, size: size)
+            return CGRect(origin: annotation.start, size: size).applying(upright(about: annotation.start, orientation))
         case .step:
             let r = stepRadius(annotation)
             return CGRect(x: annotation.start.x - r, y: annotation.start.y - r, width: r * 2, height: r * 2)
@@ -306,9 +321,12 @@ enum AnnotationRenderer {
 
     /// `tolerance` is in source pixels. With `interior`, clicking inside a
     /// hollow box (or blur region) counts; otherwise only its edge does.
-    static func hitTest(_ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false) -> Bool {
+    static func hitTest(
+        _ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false,
+        orientation: CGAffineTransform = .identity
+    ) -> Bool {
         if annotation.kind == .text || annotation.kind == .step || (interior && annotation.kind.isBoxed) {
-            return bounds(annotation).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+            return bounds(annotation, orientation: orientation).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         }
         switch annotation.kind {
         case .blur, .pixelate:
@@ -346,7 +364,7 @@ enum AnnotationRenderer {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         for annotation in drawable {
-            draw(annotation, in: context)
+            draw(annotation, in: context, orientation: transform)
         }
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()

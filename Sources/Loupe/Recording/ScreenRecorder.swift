@@ -25,8 +25,10 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
     private var micSession: AVCaptureSession?
     private let writer: RecordingWriter
     /// Called (on the main queue) if the stream stops on its own, e.g. the
-    /// user ends sharing from the system's menu bar indicator.
+    /// user ends sharing from the system's menu bar indicator, or if the
+    /// file stops being written (e.g. the disk is full).
     var onStreamError: (@MainActor (Error) -> Void)?
+    private var reportedWriterFailure = false
 
     init(configuration: RecordingConfiguration, outputURL: URL) throws {
         self.configuration = configuration
@@ -56,17 +58,24 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
         config.sampleRate = 48_000
         config.channelCount = 2
 
-        let stream = SCStream(filter: configuration.filter, configuration: config, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        if configuration.capturesSystemAudio {
-            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-        }
-        self.stream = stream
+        do {
+            let stream = SCStream(filter: configuration.filter, configuration: config, delegate: self)
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+            if configuration.capturesSystemAudio {
+                try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+            }
+            self.stream = stream
 
-        if let device = configuration.microphone {
-            startMicrophone(device)
+            if let device = configuration.microphone {
+                startMicrophone(device)
+            }
+            try await stream.startCapture()
+        } catch {
+            // Don't leave the microphone running or an empty file behind.
+            stream = nil
+            await cancel()
+            throw error
         }
-        try await stream.startCapture()
     }
 
     private func startMicrophone(_ device: AVCaptureDevice) {
@@ -136,6 +145,16 @@ extension ScreenRecorder: SCStreamOutput, SCStreamDelegate, AVCaptureAudioDataOu
         default:
             break
         }
+        reportWriterFailure()
+    }
+
+    /// Runs on `queue`: tells the controller as soon as the file can't be written.
+    private func reportWriterFailure() {
+        guard !reportedWriterFailure, let error = writer.failure else { return }
+        reportedWriterFailure = true
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.onStreamError?(error) }
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -146,6 +165,7 @@ extension ScreenRecorder: SCStreamOutput, SCStreamDelegate, AVCaptureAudioDataOu
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         writer.appendAudio(sampleBuffer, source: .microphone)
+        reportWriterFailure()
     }
 }
 
@@ -163,6 +183,12 @@ private final class RecordingWriter {
     private var lastVideoTime = CMTime.invalid
     private var lastAudioTime: [ObjectIdentifier: CMTime] = [:]
     private var isFinished = false
+
+    /// Set once the writer has failed (disk full, encoder error); nothing more will be written.
+    var failure: Error? {
+        guard !isFinished, writer.status == .failed else { return nil }
+        return writer.error ?? CocoaError(.fileWriteUnknown)
+    }
 
     init(url: URL, pixelSize: CGSize, framesPerSecond: Int, systemAudio: Bool, microphone: Bool) throws {
         writer = try AVAssetWriter(outputURL: url, fileType: .mp4)

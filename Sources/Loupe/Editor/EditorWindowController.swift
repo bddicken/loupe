@@ -62,6 +62,51 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         return NSSize(width: width, height: height)
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        model.commitTextEditing?()
+        guard model.isDirty else { return true }
+        Self.unsavedChangesAlert().beginSheetModal(for: sender) { [weak self] response in
+            guard let self, self.resolveUnsavedChanges(response) else { return }
+            sender.close()
+        }
+        return false
+    }
+
+    /// Asks about each editor with unsaved changes before quitting. False cancels the quit.
+    static func confirmQuit() -> Bool {
+        for controller in open {
+            controller.model.commitTextEditing?()
+            guard controller.model.isDirty, let window = controller.window else { continue }
+            // A close sheet is already asking about this one.
+            if window.attachedSheet != nil { return false }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            guard controller.resolveUnsavedChanges(unsavedChangesAlert().runModal()) else { return false }
+        }
+        return true
+    }
+
+    private static func unsavedChangesAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "Do you want to save the changes to this screenshot?"
+        alert.informativeText = "Your changes will be lost if you don’t save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let discard = alert.addButton(withTitle: "Don’t Save")
+        discard.keyEquivalent = "d"
+        discard.keyEquivalentModifierMask = .command
+        return alert
+    }
+
+    /// True if the window may close: saved, or the changes were discarded.
+    private func resolveUnsavedChanges(_ response: NSApplication.ModalResponse) -> Bool {
+        switch response {
+        case .alertFirstButtonReturn: model.save()
+        case .alertThirdButtonReturn: true
+        default: false
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         Self.open.removeAll { $0 === self }
         if Self.open.isEmpty {
@@ -111,17 +156,24 @@ final class EditorWindow: NSWindow {
         MainActor.assumeIsolated { model.resetZoom() }
     }
 
+    /// While a text annotation is being typed, ⌘Z / ⇧⌘Z undo the typing, not the image edits.
+    private var isEditingText: Bool { firstResponder is NSText }
+
     @objc func undo(_ sender: Any?) {
+        if isEditingText { undoManager?.undo(); return }
         MainActor.assumeIsolated { model.undo() }
     }
 
     @objc func redo(_ sender: Any?) {
+        if isEditingText { undoManager?.redo(); return }
         MainActor.assumeIsolated { model.redo() }
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         MainActor.assumeIsolated {
             switch menuItem.action {
+            case #selector(undo(_:)) where isEditingText: undoManager?.canUndo ?? false
+            case #selector(redo(_:)) where isEditingText: undoManager?.canRedo ?? false
             case #selector(undo(_:)): model.canUndo && !model.isCropping
             case #selector(redo(_:)): model.canRedo && !model.isCropping
             default: super.validateMenuItem(menuItem)

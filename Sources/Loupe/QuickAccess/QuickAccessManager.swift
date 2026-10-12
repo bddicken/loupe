@@ -26,9 +26,11 @@ final class QuickAccessManager {
     func show(_ recording: Recording) {
         let pixels = recording.thumbnail.map { NSSize(width: $0.width, height: $0.height) } ?? NSSize(width: 16, height: 10)
         let size = QuickAccessPanel.thumbnailSize(forPixels: pixels)
-        present(QuickAccessPanel(size: size) { dismiss in
+        let panel = QuickAccessPanel(size: size) { dismiss in
             RecordingQuickAccessView(recording: recording, size: size, dismiss: dismiss)
-        })
+        }
+        panel.holdsUnsavedWork = { recording.isTemporary }
+        present(panel)
     }
 
     private func present(_ panel: QuickAccessPanel) {
@@ -37,8 +39,9 @@ final class QuickAccessManager {
             self.dismiss(panel)
         }
         panels.insert(panel, at: 0)
-        while panels.count > maxPanels {
-            panels.removeLast().orderOut(nil)
+        // Push out the oldest thumbnails, but never an unsaved recording: it's the only way back to it.
+        while panels.count > maxPanels, let oldest = panels.lastIndex(where: { !$0.holdsUnsavedWork() }) {
+            panels.remove(at: oldest).orderOut(nil)
         }
 
         layout(animated: true)
@@ -82,6 +85,8 @@ final class QuickAccessManager {
 
 final class QuickAccessPanel: NSPanel {
     var onDismiss: (() -> Void)?
+    /// True while closing this thumbnail would lose something (an unsaved recording).
+    var holdsUnsavedWork: () -> Bool = { false }
 
     @MainActor
     init<Content: View>(size: NSSize, content: (_ dismiss: @escaping () -> Void) -> Content) {
@@ -290,7 +295,7 @@ private struct RecordingQuickAccessView: View {
 
                 VStack {
                     HStack {
-                        CornerButton(symbol: "xmark", help: "Close", action: dismiss)
+                        CornerButton(symbol: "xmark", help: "Close", action: close)
                         Spacer()
                         CornerButton(symbol: "play.fill", help: "Open", action: open)
                     }
@@ -340,6 +345,21 @@ private struct RecordingQuickAccessView: View {
 
     private func copy() {
         RecordingExport.copyToPasteboard(recording.fileURL)
+        // An unsaved recording stays until it's saved or discarded.
+        if !recording.isTemporary { dismiss() }
+    }
+
+    /// Closing an unsaved recording deletes it, so ask first.
+    private func close() {
+        guard recording.isTemporary else { return dismiss() }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Discard this recording?"
+        alert.informativeText = "It hasn’t been saved, so it will be deleted."
+        alert.addButton(withTitle: "Discard").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        try? FileManager.default.removeItem(at: recording.fileURL)
         dismiss()
     }
 
@@ -352,10 +372,11 @@ private struct RecordingQuickAccessView: View {
                 recording.fileURL = url
                 recording.isTemporary = false
                 dismiss()
+                return
             } catch {
+                // e.g. the save folder is on a drive that's gone: let the user pick somewhere else.
                 NSAlert(error: error).runModal()
             }
-            return
         }
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSSavePanel()
@@ -380,6 +401,11 @@ private struct RecordingQuickAccessView: View {
             } else {
                 try FileManager.default.copyItem(at: recording.fileURL, to: url)
             }
+            if recording.isTemporary {
+                try? FileManager.default.removeItem(at: recording.fileURL)
+                recording.fileURL = url
+                recording.isTemporary = false
+            }
             dismiss()
         } catch {
             NSAlert(error: error).runModal()
@@ -400,7 +426,7 @@ private struct RecordingQuickAccessView: View {
 
     private func open() {
         NSWorkspace.shared.open(recording.fileURL)
-        dismiss()
+        if !recording.isTemporary { dismiss() }
     }
 
     private func reveal() {
