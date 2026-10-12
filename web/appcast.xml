@@ -4,21 +4,25 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.3</title>
-      <pubDate>Sun, 11 Oct 2026 23:00:33 +0000</pubDate>
-      <sparkle:version>57</sparkle:version>
-      <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
+      <title>Loupe 1.0.4</title>
+      <pubDate>Mon, 12 Oct 2026 04:25:14 +0000</pubDate>
+      <sparkle:version>61</sparkle:version>
+      <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.3</h2>
+<h2>Loupe 1.0.4</h2>
 <ul>
-  <li><strong>Record Loupe itself.</strong> Screen recordings now include Loupe's own windows (the editor, Settings, pinned screenshots and thumbnails). Only the recording outline and control bar are left out.</li>
-  <li>Fixed: choosing <strong>Save As…</strong> on a recording and keeping the same name could delete the recording. Saving over another file now only replaces it once the copy succeeds.</li>
-  <li>If Loupe doesn't have Screen Recording permission, it now says so, instead of saving black recordings or screenshots that show only the wallpaper.</li>
-  <li>Fixed a dark fringe on rounded corners in exported screenshots with a background.</li>
+  <li><strong>No more lost edits.</strong> Closing an editor or quitting Loupe with unsaved changes now asks whether to save them.</li>
+  <li><strong>Recordings are kept when saving fails.</strong> If a recording can't be moved to your save folder or converted to a GIF, Loupe tells you and keeps the original video, instead of deleting it.</li>
+  <li>Unsaved recordings stay in the thumbnail stack until you save or discard them. Closing one asks first.</li>
+  <li>If a recording can't be written (for example, the disk is full), it stops right away and tells you, instead of failing only when you press Stop.</li>
+  <li>If a screenshot can't be auto-saved to your folder, Loupe now says so. It's still in Capture History.</li>
+  <li>Text you're still typing is now included when you save, copy or pin. ⌘Z while typing undoes the typing.</li>
+  <li>Text and numbered steps stay upright after rotating or flipping an image.</li>
+  <li>Saving an opened HEIC, TIFF or WebP image now asks where to save a PNG or JPEG, instead of overwriting the original with the wrong format.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.3/Loupe-1.0.3.dmg" type="application/octet-stream" sparkle:edSignature="bBS89HINNVMmIpRxBDjPewlnZYj5Xq9EPIvCwNOXgQ5ILnJxWS1a+OTj7tKJ0rWwmXMI5u7iN0/xMbVSM6b/CA==" length="3083972" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.4/Loupe-1.0.4.dmg" type="application/octet-stream" sparkle:edSignature="l9ngrEXR1my1E2akWg0k8xrAfUAY0kZSya5CzJ2I/wNcQ2B2YD9zvtfQ7eswBbntN0IzXj7i14J5qTzzx0+iBQ==" length="3103787" />
     </item>
   </channel>
 </rss>

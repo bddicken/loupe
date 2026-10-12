@@ -18,7 +18,7 @@
   "redirects": [
     {
       "source": "/download",
-      "destination": "https://github.com/bddicken/loupe/releases/download/v1.0.3/Loupe-1.0.3.dmg",
+      "destination": "https://github.com/bddicken/loupe/releases/download/v1.0.4/Loupe-1.0.4.dmg",
       "permanent": false
     }
   ]
