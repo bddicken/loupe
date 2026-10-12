@@ -24,10 +24,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         let hostingView = NSHostingView(rootView: EditorView(model: model))
-        // Only the user resizes the window: SwiftUI may enforce the minimum size,
-        // but switching modes (crop, background panel) never grows or shrinks it.
-        hostingView.sizingOptions = [.minSize]
+        // Only the user resizes the window: switching modes (crop, background panel)
+        // never grows or shrinks it. The minimum is fixed and stated here as constraints
+        // (which AppKit derives the window's minimum from), rather than derived by the
+        // hosting view, which would re-measure the whole editor after every change
+        // (each tick of a dragged slider).
+        hostingView.sizingOptions = []
         window.contentView = hostingView
+        NSLayoutConstraint.activate([
+            hostingView.widthAnchor.constraint(greaterThanOrEqualToConstant: EditorView.minimumSize.width),
+            hostingView.heightAnchor.constraint(greaterThanOrEqualToConstant: EditorView.minimumSize.height),
+        ])
         window.setContentSize(Self.initialContentSize(for: screenshot))
         window.center()
         window.setFrameAutosaveName("") // Each editor opens centered.
