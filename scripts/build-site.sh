@@ -81,20 +81,34 @@ for page in "$SITE"/**/*.html(.); do
   fi
 done
 
-# Sitemap. A page's lastmod is when its sources last changed: the page, its
-# includes, and release-notes/ (every page shows the current version).
+# Sitemap, home page first. A page's lastmod is when its own source last changed,
+# so search engines can trust it; the home page and changelog also change with
+# each release (version, download link, notes). Shared includes don't count.
+RELEASE_DATE="$(git for-each-ref --format='%(creatordate:short)' "refs/tags/v$VERSION")"
 lastmod() {
-  [[ -n "$(git status --porcelain -- "$@")" ]] && { echo "$TODAY"; return; }
-  local d="$(git log -1 --format=%cs -- "$@")"
-  echo "${d:-$TODAY}"
+  local d
+  if [[ -n "$(git status --porcelain -- "$1")" ]]; then d="$TODAY"; else d="$(git log -1 --format=%cs -- "$1")"; fi
+  d="${d:-$TODAY}"
+  if [[ "${2:-}" == release ]]; then
+    local r="${RELEASE_DATE:-$TODAY}"
+    [[ "$r" > "$d" ]] && d="$r"
+  fi
+  echo "$d"
 }
 {
   echo '<?xml version="1.0" encoding="UTF-8"?>'
-  echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-  for rel in "${PAGES[@]}"; do
-    loc="$SITE_URL/${rel%.html}"
-    [[ "$rel" == index.html ]] && loc="$SITE_URL/"
-    echo "  <url><loc>$loc</loc><lastmod>$(lastmod "site/$rel" site/_topbar.html site/_footer.html release-notes)</lastmod></url>"
+  echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
+  for rel in index.html "${(@)PAGES:#index.html}"; do
+    case "$rel" in
+      index.html)
+        echo "  <url>
+    <loc>$SITE_URL/</loc>
+    <lastmod>$(lastmod "site/$rel" release)</lastmod>
+    <image:image><image:loc>$SITE_URL/editor.png</image:loc></image:image>
+  </url>" ;;
+      changelog.html) echo "  <url><loc>$SITE_URL/${rel%.html}</loc><lastmod>$(lastmod "site/$rel" release)</lastmod></url>" ;;
+      *) echo "  <url><loc>$SITE_URL/${rel%.html}</loc><lastmod>$(lastmod "site/$rel")</lastmod></url>" ;;
+    esac
   done
   echo '</urlset>'
 } > "$WEB/sitemap.xml"
