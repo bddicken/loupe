@@ -33,6 +33,14 @@ final class CaptureController {
 
     private var canStart: Bool { session == nil && countdown == nil && !isBusy }
 
+    /// Loupe's own floating windows, kept out of screenshots: thumbnails, pins, and the
+    /// outline and control bar of a recording in progress.
+    private var excludedWindowNumbers: Set<Int> {
+        QuickAccessManager.shared.windowNumbers
+            .union(PinManager.shared.windowNumbers)
+            .union(ScreenRecordingController.shared.chromeWindowNumbers)
+    }
+
     /// Without Screen Recording permission, macOS still "captures" but returns only
     /// the wallpaper (or black video), so check first and explain instead.
     private func hasScreenAccess() -> Bool {
@@ -120,16 +128,17 @@ final class CaptureController {
             defer { isBusy = false }
             do {
                 let windows = ScreenCapturer.visibleWindows()
-                let snapshots = try await ScreenCapturer.snapshotAllDisplays(
-                    excludingWindowNumbers: QuickAccessManager.shared.windowNumbers
-                )
+                let snapshots = try await ScreenCapturer.snapshotAllDisplays(excludingWindowNumbers: excludedWindowNumbers)
                 guard !snapshots.isEmpty else { return }
                 let session = SelectionSession(snapshots: snapshots, windows: windows, mode: mode) { [weak self] result in
                     self?.session = nil
+                    ScreenRecordingController.shared.excludeTemporarily([])
                     if let result { completion(result) }
                 }
                 self.session = session
                 session.begin()
+                // Selecting a screenshot area while recording mustn't freeze the recording on the overlay.
+                ScreenRecordingController.shared.excludeTemporarily(session.windowNumbers)
             } catch {
                 showCaptureError(error)
             }
@@ -154,7 +163,7 @@ final class CaptureController {
             do {
                 let snapshots = try await ScreenCapturer.snapshot(
                     screens: [screen],
-                    excludingWindowNumbers: QuickAccessManager.shared.windowNumbers.union(PinManager.shared.windowNumbers)
+                    excludingWindowNumbers: excludedWindowNumbers
                 )
                 guard let snapshot = snapshots.first else { return }
                 if let rect {

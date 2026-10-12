@@ -21,6 +21,7 @@ enum HistoryWindowController {
             window.center()
             self.window = window
         }
+        DockPresence.show()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

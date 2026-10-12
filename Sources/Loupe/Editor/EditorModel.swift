@@ -90,11 +90,11 @@ final class EditorModel: ObservableObject {
                 loadBackgroundImageIfNeeded()
                 state.backdrop.saveAsLastUsed()
             }
-            // The editor draws the background live (see EditorView), so background-only
-            // changes need no re-render: they're instant and stay in step with drawings.
-            var contentState = state
-            contentState.backdrop = oldValue.backdrop
-            if contentState != oldValue { scheduleRender() }
+            // The editor draws the background and (outside crop mode) arrows, text and
+            // shapes live over the preview, so only changes to the pixels need a re-render.
+            if Self.pixelContent(of: state, cropping: isCropping) != Self.pixelContent(of: oldValue, cropping: isCropping) {
+                scheduleRender()
+            }
         }
     }
     /// The edited image without its background (the editor draws that live).
@@ -172,6 +172,8 @@ final class EditorModel: ObservableObject {
     private let latestRender = RenderToken()
     private var toastTask: Task<Void, Never>?
     private var backgroundImages: [String: CGImage] = [:]
+    private var unloadableBackgroundPath: String?
+    private var warnedAboutUnloadableBackground = false
     /// A 1×1 image of the most common border pixel, for `CropExtend.commonColor`.
     private lazy var commonEdgePixel: CIImage? = Self.mostCommonEdgePixel(of: screenshot.image)
         .map { fullSource.cropped(to: CGRect(x: $0.x, y: $0.y, width: 1, height: 1)) }
@@ -207,6 +209,17 @@ final class EditorModel: ObservableObject {
         savedState = state
         loadBackgroundImageIfNeeded()
         scheduleRender()
+    }
+
+    /// What the preview image is rendered from: everything but the background, and
+    /// outside crop mode only the blur/pixelate annotations (the rest are drawn live).
+    private static func pixelContent(of state: EditState, cropping: Bool) -> EditState {
+        var content = state
+        content.backdrop = Backdrop()
+        if !cropping {
+            content.annotations = state.annotations.filter(\.kind.isRegionEffect)
+        }
+        return content
     }
 
     // MARK: - Derived
@@ -316,8 +329,19 @@ final class EditorModel: ObservableObject {
 
     private func loadBackgroundImageIfNeeded() {
         guard case let .image(path) = state.backdrop.fill, backgroundImages[path] == nil else { return }
-        if let image = Backdrop.loadBackgroundImage(path: path) {
-            backgroundImages = [path: image] // Only keep the current one.
+        if path != unloadableBackgroundPath {
+            if let image = Backdrop.loadBackgroundImage(path: path) {
+                backgroundImages = [path: image] // Only keep the current one.
+                return
+            }
+            // Moved, deleted or unreadable. Don't retry (slowly, on every slider tick).
+            unloadableBackgroundPath = path
+            warnedAboutUnloadableBackground = false
+        }
+        // Say so, rather than quietly showing no background.
+        if state.backdrop.enabled, !warnedAboutUnloadableBackground {
+            warnedAboutUnloadableBackground = true
+            showToast("Couldn’t open the background image “\((path as NSString).lastPathComponent)”")
         }
     }
 
@@ -354,6 +378,8 @@ final class EditorModel: ObservableObject {
         cropCanvas = makeCropCanvas(around: pendingCrop)
         pendingCropExtend = state.cropExtend
         isCropping = true
+        // The aspect ratio picked last time is still selected, so the box should match it.
+        applyAspectToPendingCrop()
         scheduleRender()
     }
 

@@ -113,24 +113,36 @@ struct EditorView: View {
         let contentSize = CGSize(width: (content.width * scale).rounded(), height: (content.height * scale).rounded())
         let backdrop = model.state.backdrop
         let radius = backdrop.enabled ? min(backdrop.cornerRadius * scale, min(contentSize.width, contentSize.height) / 2) : 0
+        let shape = RoundedRectangle(cornerRadius: radius, style: .circular)
         return ZStack {
             if backdrop.enabled {
                 BackdropFillView(backdrop: backdrop, image: model.backgroundImage, pixelsPerPoint: scale)
+                    .equatable()
                     .frame(width: size.width, height: size.height)
                     .clipped()
+                // Like export: the shadow is cast by the rounded shape (not the image's own
+                // transparency), never shows under the image, and stops at the canvas edge.
+                shape
+                    .fill(.black)
+                    .frame(width: contentSize.width, height: contentSize.height)
+                    .shadow(
+                        color: .black.opacity(backdrop.shadowOpacity),
+                        // Core Graphics' shadow blur is roughly twice SwiftUI's radius.
+                        radius: backdrop.shadowBlur * scale / 2,
+                        x: 0,
+                        y: backdrop.shadowOffset * scale
+                    )
+                    .overlay(shape.fill(.black).frame(width: contentSize.width, height: contentSize.height).blendMode(.destinationOut))
+                    .compositingGroup()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .opacity(backdrop.shadowOpacity > 0 && (backdrop.shadowBlur > 0 || backdrop.shadowOffset > 0) ? 1 : 0)
             }
             Image(decorative: preview, scale: 1)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: contentSize.width, height: contentSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: radius, style: .circular))
-                .shadow(
-                    color: .black.opacity(backdrop.enabled ? backdrop.shadowOpacity : 0),
-                    // Core Graphics' shadow blur is roughly twice SwiftUI's radius.
-                    radius: backdrop.enabled ? backdrop.shadowBlur * scale / 2 : 0,
-                    x: 0,
-                    y: backdrop.enabled ? backdrop.shadowOffset * scale : 0
-                )
+                .clipShape(shape)
             annotationCanvas(contentSize: contentSize)
         }
         .frame(width: size.width, height: size.height)
@@ -642,7 +654,7 @@ private struct BackgroundPanel: View {
                                 Swatch(isSelected: backdrop.fill == .gradient(id: preset.id), help: preset.name) {
                                     model.updateBackdrop { $0.fill = .gradient(id: preset.id) }
                                 } content: {
-                                    PresetSwatch(preset: preset)
+                                    PresetSwatch(preset: preset).equatable()
                                 }
                             }
                         }
@@ -875,11 +887,17 @@ private final class CanvasGestureView: NSView {
 
 /// Draws a background fill with the same Core Graphics code export uses, so
 /// gradients and textures look identical live and in the saved image.
-private struct BackdropFillView: View {
+/// Equatable so the (possibly heavy) texture is only redrawn when the background
+/// itself changes, not on every zoom, pan, toast or drawing change.
+private struct BackdropFillView: View, Equatable {
     let backdrop: Backdrop
     let image: CGImage?
     /// View points per canvas point (texture scale).
     let pixelsPerPoint: CGFloat
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.backdrop == b.backdrop && a.image === b.image && a.pixelsPerPoint == b.pixelsPerPoint
+    }
 
     var body: some View {
         Canvas { context, size in
@@ -894,8 +912,10 @@ private struct BackdropFillView: View {
 }
 
 /// A preset preview for the swatch grid, drawn by the same renderer.
-private struct PresetSwatch: View {
+private struct PresetSwatch: View, Equatable {
     let preset: GradientPreset
+
+    static func == (a: Self, b: Self) -> Bool { a.preset.id == b.preset.id }
 
     var body: some View {
         Canvas { context, size in

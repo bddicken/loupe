@@ -134,7 +134,10 @@ final class PinnedPanel: NSPanel {
     }
 
     @objc private func openInEditor() {
-        MainActor.assumeIsolated { EditorWindowController.open(screenshot) }
+        // Its own copy: two editors sharing one Screenshot would also share where it's
+        // saved, so saving in one could overwrite what the other saved.
+        let copy = Screenshot(image: screenshot.image, scale: screenshot.scale, fileURL: screenshot.fileURL, date: screenshot.date)
+        MainActor.assumeIsolated { EditorWindowController.open(copy) }
     }
 
     @objc private func actualSize() {

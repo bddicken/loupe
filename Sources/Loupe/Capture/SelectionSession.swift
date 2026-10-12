@@ -33,6 +33,9 @@ final class SelectionSession {
     private var overlays: [OverlayWindow] = []
     private var finished = false
     private var previousApp: NSRunningApplication?
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+
+    var windowNumbers: Set<Int> { Set(overlays.map(\.windowNumber)) }
 
     init(snapshots: [DisplaySnapshot], windows: [WindowInfo], mode: Mode, completion: @escaping (Result?) -> Void) {
         self.snapshots = snapshots
@@ -53,6 +56,28 @@ final class SelectionSession {
         keyWindow?.makeKeyAndOrderFront(nil)
         keyWindow?.makeFirstResponder(keyWindow?.selectionView)
         NSCursor.crosshair.set()
+
+        // Switching apps or Spaces would leave the frozen overlay up with Esc going
+        // elsewhere: cancel instead.
+        let cancelOnChange: @Sendable (Notification) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.cancel() }
+        }
+        observers = [
+            (NotificationCenter.default, NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: cancelOnChange)),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main, using: cancelOnChange)),
+        ]
+    }
+
+    /// Return with nothing selected in record mode: the whole display under the pointer
+    /// (not necessarily the one whose overlay has keyboard focus).
+    func selectDisplayUnderMouse() -> SelectionView? {
+        let screen = NSScreen.underMouse
+        guard let view = (overlays.first { $0.snapshot.screen == screen } ?? overlays.first)?.selectionView else { return nil }
+        selectionDidBegin(in: view)
+        view.selectWholeDisplay()
+        return view
     }
 
     /// Only one display can hold a selection at a time.
@@ -89,6 +114,10 @@ final class SelectionSession {
     private func finish(with result: Result?) {
         guard !finished else { return }
         finished = true
+        for (center, token) in observers {
+            center.removeObserver(token)
+        }
+        observers.removeAll()
         for window in overlays {
             window.orderOut(nil)
         }

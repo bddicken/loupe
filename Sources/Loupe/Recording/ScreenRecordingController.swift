@@ -47,6 +47,15 @@ final class ScreenRecordingController {
     /// Recording, or about to start / finishing up: hot keys and the menu bar stop it.
     var isActive: Bool { state != .idle }
 
+    /// The outline and control bar, kept out of screenshots taken while recording.
+    var chromeWindowNumbers: Set<Int> { overlay?.excludedWindowNumbers ?? [] }
+    /// Other windows left out of the recording for now (e.g. a screenshot's selection overlay).
+    private var temporarilyExcluded: Set<Int> = []
+    private var filterGeneration = 0
+    /// The recorder being started, and whether its stream already failed before it got going.
+    private weak var startingRecorder: ScreenRecorder?
+    private var failedWhileStarting = false
+
     private var countdown: CountdownController?
     private var overlay: RecordingOverlay?
     private var recorder: ScreenRecorder?
@@ -103,6 +112,8 @@ final class ScreenRecordingController {
         guard state == .recording, let recorder, let area, let screen = area.screen, let overlay else { return }
         state = .starting
         self.recorder = nil
+        startedAt = nil
+        date = Date()
         stopTicker()
         Task {
             await recorder.cancel()
@@ -138,6 +149,61 @@ final class ScreenRecordingController {
             try? await Task.sleep(for: .seconds(seconds))
             stop()
         }
+    }
+
+    /// Asks before quitting mid-recording, which would lose it. False cancels the quit.
+    func confirmQuit() -> Bool {
+        switch state {
+        case .idle, .countingDown, .starting:
+            return true
+        case .recording:
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Loupe is recording."
+            alert.informativeText = "Quitting now will throw the recording away. Stop it first to keep it."
+            alert.addButton(withTitle: "Stop Recording")
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Quit and Discard").hasDestructiveAction = true
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                stop()
+                return false
+            case .alertThirdButtonReturn:
+                return true
+            default:
+                return false
+            }
+        case .finishing:
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Loupe is still saving a recording."
+            alert.informativeText = "Quitting now will lose it. Wait a moment, then quit again."
+            alert.addButton(withTitle: "Wait")
+            alert.addButton(withTitle: "Quit Anyway").hasDestructiveAction = true
+            return alert.runModal() == .alertSecondButtonReturn
+        }
+    }
+
+    /// Leaves `windowNumbers` out of the recording (on top of the recording's own chrome)
+    /// until called again; pass [] to show everything again.
+    func excludeTemporarily(_ windowNumbers: Set<Int>) {
+        guard state == .recording, let recorder, let area, temporarilyExcluded != windowNumbers else { return }
+        temporarilyExcluded = windowNumbers
+        filterGeneration += 1
+        let generation = filterGeneration
+        let excluded = chromeWindowNumbers.union(windowNumbers)
+        Task {
+            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+                  // A later call superseded this one, or the recording moved on.
+                  generation == filterGeneration, recorder === self.recorder,
+                  let filter = Self.makeFilter(content: content, displayID: area.displayID, excluding: excluded) else { return }
+            try? await recorder.updateFilter(filter)
+        }
+    }
+
+    private static func makeFilter(content: SCShareableContent, displayID: CGDirectDisplayID, excluding excluded: Set<Int>) -> SCContentFilter? {
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { return nil }
+        return SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains(Int($0.windowID)) })
     }
 
     // MARK: - Steps
@@ -192,27 +258,36 @@ final class ScreenRecordingController {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let recorder = try ScreenRecorder(configuration: configuration, outputURL: url)
-        recorder.onStreamError = { [weak self] _ in
+        recorder.onStreamError = { [weak self, weak recorder] _ in
             // e.g. sharing was stopped from the system menu, or the file can't be
             // written (disk full): stop now rather than recording into the void.
-            self?.stop()
+            // Errors from a recorder that was already restarted or discarded don't count.
+            guard let self, let recorder else { return }
+            if self.recorder === recorder {
+                self.stop()
+            } else if self.startingRecorder === recorder {
+                self.failedWhileStarting = true
+            }
         }
+        startingRecorder = recorder
+        failedWhileStarting = false
+        defer { startingRecorder = nil }
         try await recorder.start()
         self.recorder = recorder
         startedAt = Date()
         state = .recording
         startTicker()
+        if failedWhileStarting { stop() }
     }
 
     private func makeConfiguration(screen: NSScreen, area: CaptureArea, overlay: RecordingOverlay) async throws -> RecordingConfiguration {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first(where: { $0.displayID == area.displayID }) else {
-            throw RecordingError.displayUnavailable
-        }
         // Leave out only the recording chrome (outline and control bar), so the rest of
         // Loupe (editor, pins, thumbnails, click ripples) shows up like any other app.
-        let excluded = overlay.excludedWindowNumbers
-        let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains(Int($0.windowID)) })
+        guard let display = content.displays.first(where: { $0.displayID == area.displayID }),
+              let filter = Self.makeFilter(content: content, displayID: area.displayID, excluding: overlay.excludedWindowNumbers) else {
+            throw RecordingError.displayUnavailable
+        }
 
         let rect = area.rect
         let scale = screen.backingScaleFactor
@@ -302,6 +377,7 @@ final class ScreenRecordingController {
     }
 
     private func reset() {
+        temporarilyExcluded = []
         countdown = nil
         area = nil
         startedAt = nil
