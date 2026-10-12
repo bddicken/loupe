@@ -20,7 +20,7 @@ struct AnnotationCanvas: NSViewRepresentable {
 
 /// Draws annotations live and turns mouse/keyboard input into annotation edits.
 /// Uses the same AnnotationRenderer as export, so what you see is what you get.
-final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
+final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     private let model: EditorModel
     private var transform: CGAffineTransform = .identity
     private var contentRect: CGRect = .zero
@@ -36,19 +36,26 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         }
     }
     private var moving: (id: UUID, last: CGPoint, didCheckpoint: Bool)?
+    /// A text pressed with the Text tool: a click (no drag) edits it on mouse up; a drag moves it.
+    private var editTextOnClick: UUID?
 
     private enum Handle {
         case endpoint(Int)
         case corner(Int) // 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left
         case scale(Int) // Bounding-box corner that scales text, counters and freehand strokes.
+        case textWidth(trailing: Bool) // A text box's left or right edge: sets the width it wraps at.
     }
     /// The fixed point while dragging a box corner is the opposite corner.
     private var resizing: (id: UUID, handle: Handle, anchor: CGPoint, original: Annotation, didCheckpoint: Bool)?
     private let handleRadius: CGFloat = 4.5
 
-    private var textField: NSTextField?
+    private var textView: NSTextView?
     /// The text annotation being edited, and whether it already exists in the model.
     private var editing: (annotation: Annotation, isNew: Bool)?
+    /// A text box being dragged out with the Text tool (view points); a click makes an auto-width label instead.
+    private var textDrag: (start: CGPoint, current: CGPoint)?
+    /// Shortest drag that makes a fixed-width text box rather than a click.
+    private let textDragThreshold: CGFloat = 12
 
     init(model: EditorModel) {
         self.model = model
@@ -68,7 +75,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.textField == nil else { return }
+            guard let self, self.textView == nil else { return }
             self.window?.makeFirstResponder(self)
         }
     }
@@ -82,7 +89,9 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             if model.tool != .text { endTextEditing() }
             window?.invalidateCursorRects(for: self)
         }
-        repositionTextField()
+        repositionTextView()
+        // The selected text's width handles get a resize cursor.
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 
@@ -117,6 +126,13 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
 
         if let draft, draft.kind.isRegionEffect {
             strokeDashed(draft.rect.applying(transform), color: .white)
+        }
+        if let textDrag {
+            strokeDashed(Self.rect(textDrag.start, textDrag.current), color: .controlAccentColor)
+        }
+        if let textView {
+            // The box being typed into, so its extent (and wrap width) is clear.
+            strokeDashed(textView.frame.insetBy(dx: -4, dy: -2), color: .controlAccentColor)
         }
         if let selected = annotations.first(where: { $0.id == selectedID }), selected.id != editing?.annotation.id {
             let handles = self.handles(for: selected)
@@ -158,13 +174,31 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             ]
         case .text, .step, .pen, .highlighter:
             let r = AnnotationRenderer.bounds(annotation, orientation: transform)
-            return [
+            var handles: [(handle: Handle, point: CGPoint)] = [
                 (.scale(0), CGPoint(x: r.minX, y: r.minY)),
                 (.scale(1), CGPoint(x: r.maxX, y: r.minY)),
                 (.scale(2), CGPoint(x: r.maxX, y: r.maxY)),
                 (.scale(3), CGPoint(x: r.minX, y: r.maxY)),
             ]
+            if annotation.kind == .text {
+                // Text reads upright on screen, so its box's edges are found in view space.
+                let box = textBox(annotation)
+                let toSource = transform.inverted()
+                handles.append((.textWidth(trailing: false), CGPoint(x: box.minX, y: box.midY).applying(toSource)))
+                handles.append((.textWidth(trailing: true), CGPoint(x: box.maxX, y: box.midY).applying(toSource)))
+            }
+            return handles
         }
+    }
+
+    /// A text annotation's box in view points (text always reads upright on screen).
+    private func textBox(_ annotation: Annotation) -> CGRect {
+        let size = AnnotationRenderer.textSize(annotation)
+        return CGRect(origin: annotation.start.applying(transform), size: CGSize(width: size.width * viewScale, height: size.height * viewScale))
+    }
+
+    private static func rect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
+        CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
     }
 
     @MainActor
@@ -190,13 +224,20 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     }
 
     override func resetCursorRects() {
-        let tool = MainActor.assumeIsolated { model.tool }
+        let (tool, selected) = MainActor.assumeIsolated { (model.tool, model.selectedAnnotation) }
         let cursor: NSCursor = switch tool {
         case .select: .arrow
         case .text: .iBeam
         default: .crosshair
         }
         addCursorRect(contentRect, cursor: cursor)
+        if let selected, selected.kind == .text, textView == nil {
+            let box = textBox(selected)
+            let size = (handleRadius + 4) * 2
+            for x in [box.minX, box.maxX] {
+                addCursorRect(CGRect(x: x - size / 2, y: box.midY - size / 2, width: size, height: size), cursor: .resizeLeftRight)
+            }
+        }
     }
 
     // MARK: - Mouse
@@ -216,6 +257,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             switch handle {
             case let .endpoint(index): anchor = selected.points[1 - index]
             case let .corner(index), let .scale(index): anchor = handles(for: selected)[(index + 2) % 4].point
+            case .textWidth: anchor = selected.start
             }
             resizing = (selected.id, handle, anchor, selected, false)
             return
@@ -228,10 +270,12 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
 
         if let hit {
             model.selectedAnnotationID = hit.id
-            if hit.kind == .text, event.clickCount == 2 || model.tool == .text {
+            if hit.kind == .text, event.clickCount == 2 {
                 beginTextEditing(hit, isNew: false)
             } else {
+                // Any shape, text included, can be dragged to move it.
                 moving = (hit.id, point, false)
+                if hit.kind == .text, model.tool == .text { editTextOnClick = hit.id }
             }
             needsDisplay = true
             return
@@ -245,7 +289,9 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         case .select:
             break
         case .text:
-            beginTextEditing(model.newAnnotation(.text, points: [point]), isNew: true)
+            // A click makes an auto-width label; a drag, a box that wraps at its width (on mouse up).
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            textDrag = (viewPoint, viewPoint)
         case .step:
             model.addAnnotation(model.newAnnotation(.step, points: [point]))
         default:
@@ -272,6 +318,18 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
                     switch resize.handle {
                     case let .endpoint(index): annotation.points[index] = target
                     case .corner: annotation.points = [resize.anchor, target]
+                    case let .textWidth(trailing):
+                        // In view space, where the text box is upright; at least about one character wide.
+                        let box = textBox(resize.original)
+                        let x = convert(event.locationInWindow, from: nil).x
+                        let minimum = resize.original.fontSize * viewScale
+                        if trailing {
+                            annotation.textWidth = max(x - box.minX, minimum) / viewScale
+                        } else {
+                            let left = min(x, box.maxX - minimum)
+                            annotation.textWidth = (box.maxX - left) / viewScale
+                            annotation.points = [CGPoint(x: left, y: box.minY).applying(transform.inverted())]
+                        }
                     case .scale:
                         // Uniform scale, keeping the opposite corner fixed.
                         let box = AnnotationRenderer.bounds(resize.original, orientation: transform)
@@ -295,6 +353,12 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
                 moving = move
                 return
             }
+            if var drag = textDrag {
+                drag.current = convert(event.locationInWindow, from: nil)
+                textDrag = drag
+                needsDisplay = true
+                return
+            }
             guard var draft else { return }
             if draft.kind.isFreehand {
                 if let last = draft.points.last, hypot(point.x - last.x, point.y - last.y) * viewScale >= 1 {
@@ -310,8 +374,29 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         MainActor.assumeIsolated {
+            let wasDragged = moving?.didCheckpoint ?? false
             moving = nil
             resizing = nil
+            if let id = editTextOnClick {
+                editTextOnClick = nil
+                if !wasDragged, let text = model.state.annotations.first(where: { $0.id == id }) {
+                    beginTextEditing(text, isNew: false)
+                    return
+                }
+            }
+            if let drag = textDrag {
+                textDrag = nil
+                let box = Self.rect(drag.start, drag.current)
+                var text = model.newAnnotation(.text, points: [box.origin.applying(transform.inverted())])
+                if box.width >= textDragThreshold {
+                    text.textWidth = box.width / viewScale
+                } else {
+                    text.points = [drag.start.applying(transform.inverted())]
+                }
+                beginTextEditing(text, isNew: true)
+                needsDisplay = true
+                return
+            }
             guard let draft else { return }
             self.draft = nil
             let isMeaningful = draft.kind.isFreehand
@@ -417,48 +502,86 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         endTextEditing()
         editing = (annotation, isNew)
 
-        let field = NSTextField(string: annotation.text)
-        field.isBordered = false
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.textColor = annotation.color.nsColor
-        field.delegate = self
-        field.cell?.wraps = false
-        field.cell?.isScrollable = true
-        addSubview(field)
-        textField = field
-        repositionTextField()
-        window?.makeFirstResponder(field)
+        // A multi-line editor sized to its text, so everything typed stays visible; a
+        // text box with a width wraps at it. Return starts a new line; Esc or clicking
+        // elsewhere finishes.
+        let textView = NSTextView(frame: .zero)
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isVerticallyResizable = false
+        textView.isHorizontallyResizable = false
+        textView.textContainerInset = .zero
+        if let container = textView.textContainer {
+            // Like the rendered text: no padding, wrapping only at a set width.
+            container.lineFragmentPadding = 0
+            container.widthTracksTextView = false
+            container.heightTracksTextView = false
+        }
+        textView.layoutManager?.usesFontLeading = false
+        textView.string = annotation.text
+        textView.textColor = annotation.color.nsColor
+        textView.insertionPointColor = annotation.color.nsColor
+        textView.delegate = self
+        addSubview(textView)
+        self.textView = textView
+        repositionTextView()
+        window?.makeFirstResponder(textView)
+        textView.selectAll(nil)
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 
-    private func repositionTextField() {
-        guard let field = textField, let annotation = editing?.annotation else { return }
-        field.font = NSFont.systemFont(ofSize: annotation.fontSize * viewScale, weight: .bold)
+    /// Sizes and places the editor to show all of the text. It lays the text out at its
+    /// real size and is scaled to the zoom, so it wraps exactly like the drawn text
+    /// (the system font's spacing changes with point size).
+    private func repositionTextView() {
+        guard let textView, let annotation = editing?.annotation,
+              let container = textView.textContainer, let layout = textView.layoutManager else { return }
+        let scale = viewScale
+        let font = NSFont.systemFont(ofSize: annotation.fontSize, weight: .bold)
+        if textView.font != font {
+            textView.font = font
+            textView.typingAttributes = [.font: font, .foregroundColor: annotation.color.nsColor]
+        }
+        container.containerSize = CGSize(width: annotation.textWidth ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        let lineHeight = layout.defaultLineHeight(for: font)
+        // Room for the caret after the last character of an auto-width label.
+        let size = CGSize(
+            width: annotation.textWidth ?? max(used.width, lineHeight * 0.3) + 2 / scale,
+            height: max(used.height, lineHeight)
+        )
         let origin = annotation.start.applying(transform)
-        let size = field.intrinsicContentSize
-        // NSTextField insets its text ~2pt; compensate so it lines up with the rendered text.
-        field.frame = CGRect(x: origin.x - 2, y: origin.y, width: max(size.width + 12, 40), height: size.height)
+        textView.frame = CGRect(x: origin.x, y: origin.y, width: size.width * scale, height: size.height * scale)
+        textView.setBoundsSize(size)
     }
 
-    func controlTextDidChange(_ notification: Notification) {
-        repositionTextField()
+    func textDidChange(_ notification: Notification) {
+        repositionTextView()
+        needsDisplay = true
     }
 
-    func controlTextDidEndEditing(_ notification: Notification) {
+    func textDidEndEditing(_ notification: Notification) {
         MainActor.assumeIsolated { endTextEditing() }
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(cancelOperation(_:)) else { return false }
+        MainActor.assumeIsolated { endTextEditing() }
+        return true
     }
 
     @MainActor
     private func endTextEditing() {
-        guard let field = textField, let (annotation, isNew) = editing else { return }
-        textField = nil
+        guard let textView, let (annotation, isNew) = editing else { return }
+        self.textView = nil
         editing = nil
-        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        field.delegate = nil
-        field.removeFromSuperview()
-        // The typing's undo steps belong to this field; don't let a later ⌘Z replay them.
+        let text = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        textView.delegate = nil
+        textView.removeFromSuperview()
+        // The typing's undo steps belong to this editor; don't let a later ⌘Z replay them.
         window?.undoManager?.removeAllActions()
 
         if isNew {
@@ -473,6 +596,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
             model.updateAnnotation(annotation.id, checkpoint: true) { $0.text = text }
         }
         window?.makeFirstResponder(self)
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 }

@@ -2,8 +2,12 @@ import SwiftUI
 
 struct EditorView: View {
     @ObservedObject var model: EditorModel
+    /// Screen pixels per point, for rendering the preview at the size it's shown.
+    @Environment(\.displayScale) private var displayScale
 
     static let backgroundPanelWidth: CGFloat = 260
+    /// Panels and modes take space from the canvas instead of resizing the window.
+    static let minimumSize = CGSize(width: 900, height: 500)
 
     var body: some View {
         HStack(spacing: 0) {
@@ -16,10 +20,11 @@ struct EditorView: View {
             }
             VStack(spacing: 0) {
                 AnnotationToolbar(model: model)
+                    .equatable()
                 Divider()
                 canvas
                 Divider()
-                bottomBar
+                BottomBarHost(model: model)
             }
             // The canvas column absorbs any squeeze; it must never push the sidebar.
             .frame(minWidth: 0, maxWidth: .infinity)
@@ -29,8 +34,7 @@ struct EditorView: View {
                 .layoutPriority(1)
         }
         .animation(.easeInOut(duration: 0.2), value: model.showsBackgroundPanel)
-        // A fixed minimum: panels and modes take space from the canvas instead of resizing the window.
-        .frame(minWidth: 900, minHeight: 500)
+        .frame(minWidth: Self.minimumSize.width, minHeight: Self.minimumSize.height)
     }
 
     // MARK: - Canvas
@@ -42,10 +46,11 @@ struct EditorView: View {
                 // Pinch to zoom, two-finger scroll to pan, two-finger double-tap for smart zoom.
                 CanvasGestureCatcher(model: model)
 
-                if let preview = model.preview {
+                if let preview = model.previewLayout {
                     let layout = canvasLayout(for: preview, in: geometry.size)
                     let _ = model.updateZoomViewport(canvas: geometry.size, fit: layout.fit, scale: layout.scale)
                     let zoom = model.zoom
+                    let _ = model.updatePreviewResolution(screenPixelsPerImagePoint: layout.scale * zoom * displayScale)
                     let size = CGSize(width: (layout.fit.width * zoom).rounded(), height: (layout.fit.height * zoom).rounded())
                     Group {
                         if model.isCropping {
@@ -89,17 +94,12 @@ struct EditorView: View {
 
     /// The crop-mode preview covers more than the visible canvas (so dragging outward
     /// already has pixels); place it against the canvas and show only the image and crop.
-    private func cropPreview(_ preview: CGImage, size: CGSize) -> some View {
-        let rect = CropOverlay.viewRect(model.previewCropCanvas, bounds: model.cropCanvas, size: size)
-        return Image(decorative: preview, scale: 1)
-            .resizable()
-            .interpolation(.high)
+    private func cropPreview(_ preview: PreviewLayout, size: CGSize) -> some View {
+        let rect = CropOverlay.viewRect(preview.cropCanvas, bounds: model.cropCanvas, size: size)
+        let visible = CropOverlay.visibleArea(crop: model.pendingCrop, bounds: model.cropCanvas, size: size)
+            .offsetBy(dx: -rect.minX, dy: -rect.minY)
+        return PreviewSurface(frames: model.previewFrames, mask: visible.cgPath)
             .frame(width: rect.width, height: rect.height)
-            .mask {
-                CropOverlay.visibleArea(crop: model.pendingCrop, bounds: model.cropCanvas, size: size)
-                    .offsetBy(dx: -rect.minX, dy: -rect.minY)
-                    .fill()
-            }
             .offset(x: rect.minX, y: rect.minY)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
@@ -108,7 +108,7 @@ struct EditorView: View {
     /// rounded corners and shadow are view layers, so dragging a background slider
     /// is instant and the image, background and drawings always move together.
     /// (Export renders the same look at full resolution with Backdrop.compose.)
-    private func editedImage(_ preview: CGImage, size: CGSize, scale: CGFloat) -> some View {
+    private func editedImage(_ preview: PreviewLayout, size: CGSize, scale: CGFloat) -> some View {
         let content = contentNaturalSize(of: preview)
         let contentSize = CGSize(width: (content.width * scale).rounded(), height: (content.height * scale).rounded())
         let backdrop = model.state.backdrop
@@ -138,20 +138,17 @@ struct EditorView: View {
                     .clipped()
                     .opacity(backdrop.shadowOpacity > 0 && (backdrop.shadowBlur > 0 || backdrop.shadowOffset > 0) ? 1 : 0)
             }
-            Image(decorative: preview, scale: 1)
-                .resizable()
-                .interpolation(.high)
+            PreviewSurface(frames: model.previewFrames, cornerRadius: radius)
                 .frame(width: contentSize.width, height: contentSize.height)
-                .clipShape(shape)
-            annotationCanvas(contentSize: contentSize)
+            annotationCanvas(preview, contentSize: contentSize)
         }
         .frame(width: size.width, height: size.height)
     }
 
     /// Drawings over the image. Positioned with the state the preview was rendered
     /// from, so after a rotate or crop they move in the same frame as the image.
-    private func annotationCanvas(contentSize: CGSize) -> some View {
-        let mapping = model.sourceToContent(for: model.previewState)
+    private func annotationCanvas(_ preview: PreviewLayout, contentSize: CGSize) -> some View {
+        let mapping = model.sourceToContent(orientation: preview.orientation, crop: preview.crop)
         let scale = contentSize.width / max(mapping.size.width, 1)
         // A margin keeps selection handles on the image's edges fully visible.
         let margin: CGFloat = 16
@@ -164,16 +161,17 @@ struct EditorView: View {
         .frame(width: contentSize.width + margin * 2, height: contentSize.height + margin * 2)
     }
 
-    /// The edited image's size in points at 100% (the preview may be downscaled).
-    private func contentNaturalSize(of preview: CGImage) -> CGSize {
-        let pointsPerPreviewPixel = 1 / (model.previewScale * model.previewShrink * model.screenshot.scale)
-        return CGSize(width: CGFloat(preview.width) * pointsPerPreviewPixel, height: CGFloat(preview.height) * pointsPerPreviewPixel)
+    /// The edited image's size in points at 100%, from its geometry (the preview's own
+    /// pixel size follows the window, and mustn't feed back into the layout).
+    private func contentNaturalSize(of preview: PreviewLayout) -> CGSize {
+        let pixels = model.sourceToContent(orientation: preview.orientation, crop: preview.crop).size
+        return CGSize(width: pixels.width / model.screenshot.scale, height: pixels.height / model.screenshot.scale)
     }
 
     /// Fits what's shown in the canvas (the image plus its background, or while
     /// cropping, the crop canvas) without enlarging past its natural size.
     /// Returns the fitted size and the fitted points per image point.
-    private func canvasLayout(for preview: CGImage, in available: CGSize) -> (fit: CGSize, scale: CGFloat) {
+    private func canvasLayout(for preview: PreviewLayout, in available: CGSize) -> (fit: CGSize, scale: CGFloat) {
         let natural: CGSize
         if model.isCropping {
             // Independent of the async preview, so the layout stays still while renders land.
@@ -193,14 +191,112 @@ struct EditorView: View {
         let scale = min(1, maxWidth / natural.width, maxHeight / natural.height)
         return (CGSize(width: (natural.width * scale).rounded(), height: (natural.height * scale).rounded()), scale)
     }
+}
 
-    // MARK: - Bottom bar
+// MARK: - Bottom bar
+
+/// Hosts the bottom bar in its own SwiftUI graph. Its ViewThatFits measures every
+/// layout variant whenever it's asked for a size, and the editor's layout asks on
+/// every change in the canvas column (each step of a crop drag or a pinch). Hosted
+/// apart, at a known height, it's only laid out again when its values or width change.
+private struct BottomBarHost: NSViewRepresentable {
+    let model: EditorModel
+    let values: EditorBottomBar.Values
+
+    init(model: EditorModel) {
+        self.model = model
+        values = EditorBottomBar.Values(model)
+    }
+
+    @MainActor
+    final class Coordinator {
+        let controller: NSHostingController<EditorBottomBar>
+        var values: EditorBottomBar.Values
+        /// The bar's height, measured once per change of values (every layout is as tall).
+        var height: CGFloat?
+
+        init(_ bar: EditorBottomBar) {
+            controller = NSHostingController(rootView: bar)
+            controller.sizingOptions = []
+            values = bar.values
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(EditorBottomBar(model: model, values: values))
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.controller.view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let coordinator = context.coordinator
+        guard coordinator.values != values else { return }
+        coordinator.values = values
+        coordinator.height = nil
+        coordinator.controller.rootView = EditorBottomBar(model: model, values: values)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        // Fills the width it's offered; the bar picks the layout that fits it.
+        let coordinator = context.coordinator
+        let width = proposal.width ?? 0
+        // Whole points, so the hosted view never straddles a pixel row.
+        let height = coordinator.height ?? coordinator.controller.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height.rounded(.up)
+        coordinator.height = height
+        return CGSize(width: width, height: height)
+    }
+}
+
+/// Undo/redo, zoom and the output buttons (crop controls while cropping). It shows
+/// plain values (see BottomBarHost); the labels that change continuously observe the model.
+private struct EditorBottomBar: View {
+    /// For actions only: what's shown comes from `values`.
+    let model: EditorModel
+    let values: Values
+
+    struct Values: Equatable {
+        var isCropping: Bool
+        var canUndo: Bool
+        var canRedo: Bool
+        var canZoomOut: Bool
+        var canZoomIn: Bool
+        var cropAspect: CropAspect
+        var cropExtend: CropExtend
+        var fileName: String?
+
+        @MainActor
+        init(_ model: EditorModel) {
+            isCropping = model.isCropping
+            canUndo = model.canUndo
+            canRedo = model.canRedo
+            canZoomOut = model.zoom > EditorModel.zoomRange.lowerBound
+            canZoomIn = model.zoom < EditorModel.zoomRange.upperBound
+            cropAspect = model.cropAspect
+            cropExtend = model.pendingCropExtend
+            fileName = model.screenshot.fileURL?.lastPathComponent
+        }
+    }
+
+
+    private var cropAspect: Binding<CropAspect> {
+        Binding(get: { values.cropAspect }, set: { model.cropAspect = $0 })
+    }
+
+    private var cropExtend: Binding<CropExtend> {
+        Binding(get: { values.cropExtend }, set: { model.pendingCropExtend = $0 })
+    }
+
+    var body: some View {
+        bottomBar
+    }
 
     @ViewBuilder
     private var bottomBar: some View {
         // Pick the richest layout that fits, so the bar never widens the window.
         ViewThatFits(in: .horizontal) {
-            if model.isCropping {
+            if values.isCropping {
                 cropBar(segmentedAspect: true, showSize: true)
                 cropBar(segmentedAspect: false, showSize: true)
                 cropBar(segmentedAspect: false, showSize: false)
@@ -221,14 +317,14 @@ struct EditorView: View {
     private func cropBar(segmentedAspect: Bool, showSize: Bool) -> some View {
         HStack(spacing: 10) {
             if segmentedAspect {
-                Picker("Aspect", selection: $model.cropAspect) {
+                Picker("Aspect", selection: cropAspect) {
                     ForEach(CropAspect.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
             } else {
-                Picker("Aspect", selection: $model.cropAspect) {
+                Picker("Aspect", selection: cropAspect) {
                     ForEach(CropAspect.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .labelsHidden()
@@ -236,7 +332,7 @@ struct EditorView: View {
                 .help("Aspect ratio")
             }
 
-            Picker("Extend", selection: $model.pendingCropExtend) {
+            Picker("Extend", selection: cropExtend) {
                 ForEach(CropExtend.allCases) { Text($0.rawValue).tag($0) }
             }
             .labelsHidden()
@@ -248,10 +344,7 @@ struct EditorView: View {
             Spacer(minLength: 8)
 
             if showSize {
-                Text(sizeText)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
+                OutputSizeLabel(model: model, alignment: .trailing)
             }
             Button("Reset", action: model.resetPendingCrop)
             Button("Cancel", action: model.cancelCrop)
@@ -264,7 +357,7 @@ struct EditorView: View {
     /// The narrowest crop bar, for a small window with the sidebar(s) open.
     private var compactCropBar: some View {
         HStack(spacing: 8) {
-            Picker("Aspect", selection: $model.cropAspect) {
+            Picker("Aspect", selection: cropAspect) {
                 ForEach(CropAspect.allCases) { Text($0.rawValue).tag($0) }
             }
             .labelsHidden()
@@ -285,7 +378,7 @@ struct EditorView: View {
     private var compactEditBar: some View {
         HStack(spacing: 8) {
             Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                .disabled(!model.canUndo)
+                .disabled(!values.canUndo)
                 .help("Undo (⌘Z)")
             zoomControl
             Spacer(minLength: 4)
@@ -304,19 +397,16 @@ struct EditorView: View {
     private func editBar(showSize: Bool) -> some View {
         HStack(spacing: 10) {
             Button { model.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                .disabled(!model.canUndo)
+                .disabled(!values.canUndo)
                 .help("Undo (⌘Z)")
             Button { model.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                .disabled(!model.canRedo)
+                .disabled(!values.canRedo)
                 .help("Redo (⇧⌘Z)")
 
             zoomControl
 
             if showSize {
-                Text(sizeText)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
+                OutputSizeLabel(model: model, alignment: .leading)
             }
 
             Spacer(minLength: 8)
@@ -328,7 +418,7 @@ struct EditorView: View {
             Button("Save As…") { model.saveAs() }
                 .help("Save to a new location (⇧⌘S)")
             Button("Save") { model.save() }
-                .help(model.screenshot.fileURL.map { "Save to \($0.lastPathComponent) (⌘S)" } ?? "Save (⌘S)")
+                .help(values.fileName.map { "Save to \($0) (⌘S)" } ?? "Save (⌘S)")
                 .buttonStyle(.borderedProminent)
         }
     }
@@ -337,25 +427,53 @@ struct EditorView: View {
     private var zoomControl: some View {
         HStack(spacing: 0) {
             Button { model.zoom(by: 1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }
-                .disabled(model.zoom <= EditorModel.zoomRange.lowerBound)
+                .disabled(!values.canZoomOut)
                 .help("Zoom Out (⌘-)")
+            // The percentage is an overlay, so the button itself never changes size.
             Button { model.resetZoom() } label: {
-                Text(abs(model.zoom - 1) > 0.001 ? "\(model.zoomPercent)%" : "Fit")
-                    .font(.callout.monospacedDigit())
-                    .frame(minWidth: 44)
+                Color.clear.frame(width: 48, height: 16)
             }
+            .overlay(ZoomLabel(model: model).allowsHitTesting(false))
             .help("Zoom to Fit (⌘0) — pinch or ⌘-scroll to zoom, two-finger scroll to pan")
             Button { model.zoom(by: 1.25) } label: { Image(systemName: "plus.magnifyingglass") }
-                .disabled(model.zoom >= EditorModel.zoomRange.upperBound)
+                .disabled(!values.canZoomIn)
                 .help("Zoom In (⌘=)")
         }
         .buttonStyle(.borderless)
         .fixedSize()
     }
+}
 
-    private var sizeText: String {
+/// The zoom percentage, which changes on every step of a pinch. It observes the model
+/// itself, at a fixed size, so the bar around it isn't re-measured as it changes.
+private struct ZoomLabel: View {
+    @ObservedObject var model: EditorModel
+
+    var body: some View {
+        Text(abs(model.zoom - 1) > 0.001 ? "\(model.zoomPercent)%" : "Fit")
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .frame(width: 48)
+    }
+}
+
+/// The output's pixel size, which changes on every step of a crop or padding drag.
+/// Like ZoomLabel, it observes the model itself, in a slot sized for a typical value
+/// (a longer one runs over a little rather than being cut off).
+private struct OutputSizeLabel: View {
+    @ObservedObject var model: EditorModel
+    let alignment: Alignment
+
+    var body: some View {
         let size = model.outputPixelSize
-        return "\(Int(size.width)) × \(Int(size.height))"
+        Text(verbatim: "0000 × 0000")
+            .hidden()
+            .overlay(alignment: alignment) {
+                Text(verbatim: "\(Int(size.width)) × \(Int(size.height))")
+                    .fixedSize()
+            }
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
     }
 }
 

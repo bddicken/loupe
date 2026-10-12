@@ -92,6 +92,8 @@ struct Annotation: Identifiable, Equatable {
     var strokeWidth: CGFloat
     var fontSize: CGFloat
     var text = ""
+    /// Text only: the width (source pixels, upright) it wraps at, or nil to grow with its longest line.
+    var textWidth: CGFloat?
     var number = 0
 
     var start: CGPoint { points.first ?? .zero }
@@ -103,7 +105,7 @@ struct Annotation: Identifiable, Equatable {
     /// Label for the layers list.
     var layerName: String {
         switch kind {
-        case .text: text.isEmpty ? "Text" : "“\(text)”"
+        case .text: text.isEmpty ? "Text" : "“\(text.replacingOccurrences(of: "\n", with: " "))”"
         case .step: "Counter \(number)"
         default: AnnotationTool.allCases.first { $0.kind == kind }?.title ?? "Shape"
         }
@@ -119,6 +121,7 @@ struct Annotation: Identifiable, Equatable {
         var copy = self
         copy.points = points.map { CGPoint(x: anchor.x + ($0.x - anchor.x) * factor, y: anchor.y + ($0.y - anchor.y) * factor) }
         if kind == .text || kind == .step { copy.fontSize = fontSize * factor }
+        copy.textWidth = textWidth.map { $0 * factor }
         return copy
     }
 
@@ -180,8 +183,16 @@ enum AnnotationRenderer {
             context.strokePath()
         case .text:
             context.concatenate(upright(about: annotation.start, orientation))
-            NSAttributedString(string: annotation.text, attributes: textAttributes(annotation))
-                .draw(at: annotation.start)
+            let string = NSAttributedString(string: annotation.text, attributes: textAttributes(annotation))
+            if annotation.textWidth != nil {
+                // A finite rect (an unbounded one drops lines when rasterized for export),
+                // with headroom so rounding never clips the last line.
+                var rect = CGRect(origin: annotation.start, size: textSize(annotation))
+                rect.size.height += annotation.fontSize
+                string.draw(with: rect, options: [.usesLineFragmentOrigin])
+            } else {
+                string.draw(at: annotation.start)
+            }
         case .step:
             context.concatenate(upright(about: annotation.start, orientation))
             drawStep(annotation, in: context)
@@ -200,6 +211,15 @@ enum AnnotationRenderer {
             .foregroundColor: annotation.color.nsColor,
             .shadow: shadow,
         ]
+    }
+
+    /// The laid-out size of a text annotation (source pixels, upright): as wide as its
+    /// wrap width, or as its longest line; as tall as its lines.
+    static func textSize(_ annotation: Annotation) -> CGSize {
+        let string = NSAttributedString(string: annotation.text.isEmpty ? " " : annotation.text, attributes: textAttributes(annotation))
+        guard let width = annotation.textWidth else { return string.size() }
+        let used = string.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin])
+        return CGSize(width: width, height: ceil(used.height))
     }
 
     /// Undoes the rotation/flip in `orientation` about `anchor` (in source pixels).
@@ -301,8 +321,7 @@ enum AnnotationRenderer {
     static func bounds(_ annotation: Annotation, orientation: CGAffineTransform = .identity) -> CGRect {
         switch annotation.kind {
         case .text:
-            let size = NSAttributedString(string: annotation.text.isEmpty ? " " : annotation.text, attributes: textAttributes(annotation)).size()
-            return CGRect(origin: annotation.start, size: size).applying(upright(about: annotation.start, orientation))
+            return CGRect(origin: annotation.start, size: textSize(annotation)).applying(upright(about: annotation.start, orientation))
         case .step:
             let r = stepRadius(annotation)
             return CGRect(x: annotation.start.x - r, y: annotation.start.y - r, width: r * 2, height: r * 2)
@@ -319,25 +338,20 @@ enum AnnotationRenderer {
         }
     }
 
-    /// `tolerance` is in source pixels. With `interior`, clicking inside a
-    /// hollow box (or blur region) counts; otherwise only its edge does.
+    /// `tolerance` is in source pixels. Text, counters and blur/pixelate regions are
+    /// solid, so a click anywhere on them counts. With `interior`, clicking inside a
+    /// hollow box counts too; otherwise only its outline does.
     static func hitTest(
         _ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false,
         orientation: CGAffineTransform = .identity
     ) -> Bool {
-        if annotation.kind == .text || annotation.kind == .step || (interior && annotation.kind.isBoxed) {
+        let kind = annotation.kind
+        if kind == .text || kind == .step || kind.isRegionEffect || (interior && kind.isBoxed) {
             return bounds(annotation, orientation: orientation).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         }
-        switch annotation.kind {
-        case .blur, .pixelate:
-            return CGPath(rect: annotation.rect, transform: nil)
-                .copy(strokingWithWidth: tolerance * 2, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
-                .contains(point)
-        default:
-            guard let path = outlinePath(annotation) else { return false }
-            let width = (annotation.kind == .highlighter ? highlighterWidth(annotation) : annotation.strokeWidth) + tolerance * 2
-            return path.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10).contains(point)
-        }
+        guard let path = outlinePath(annotation) else { return false }
+        let width = (kind == .highlighter ? highlighterWidth(annotation) : annotation.strokeWidth) + tolerance * 2
+        return path.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10).contains(point)
     }
 
     // MARK: - Export

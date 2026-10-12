@@ -1,5 +1,7 @@
 import AppKit
+import Combine
 import CoreImage
+import CoreVideo
 
 enum OrientationOp: Equatable {
     case rotateLeft, rotateRight, flipHorizontal, flipVertical
@@ -97,19 +99,15 @@ final class EditorModel: ObservableObject {
             }
         }
     }
-    /// The edited image without its background (the editor draws that live).
-    @Published private(set) var preview: CGImage?
-    /// The state `preview` was rendered from. Drawings are positioned with it, so
-    /// they move in the same frame as the image when a rotate or crop lands.
-    @Published private(set) var previewState = EditState()
+    /// The latest preview: the edited image without its background (the editor draws
+    /// that live), rendered on the GPU. The canvas's layer shows each frame directly,
+    /// so a dragged slider updates the image without a SwiftUI update.
+    let previewFrames = CurrentValueSubject<PreviewFrame?, Never>(nil)
+    /// Where the preview sits. Published only when it changes (a rotate or crop
+    /// lands), not when only the pixels do.
+    @Published private(set) var previewLayout: PreviewLayout?
     /// The left-hand background options panel.
     @Published var showsBackgroundPanel = false
-    /// Preview pixels per `previewSource` pixel: below 1 when a crop reaching far
-    /// past the image was shrunk to keep the preview a manageable size.
-    @Published private(set) var previewShrink: CGFloat = 1
-    /// The area (normalized) the current crop-mode preview covers. It's wider
-    /// than `cropCanvas` so dragging past the visible area already has pixels.
-    @Published private(set) var previewCropCanvas = EditorModel.fullRect
     @Published private(set) var isCropping = false
     @Published var pendingCrop = EditorModel.fullRect {
         didSet {
@@ -144,12 +142,14 @@ final class EditorModel: ObservableObject {
 
     // Annotation tool settings.
     @Published var tool: AnnotationTool = .arrow
-    /// Color for the next annotation drawn. Selecting a layer doesn't change it.
+    /// Color for the next annotation drawn: the last one picked in the toolbar.
     @Published private(set) var annotationColor = RGBAColor(hex: 0xFF3B30)
     /// Stroke width in points for the next annotation; text and counters scale from it.
     @Published private(set) var annotationSize: Double = 4
-    /// The selected layer, if any. While one is selected, the toolbar shows and
-    /// edits its style; otherwise it shows and edits the style for the next annotation.
+    /// The toolbar's size slider: stroke width in points.
+    static let annotationSizeRange: ClosedRange<Double> = 1...24
+    /// The selected layer, if any. While one is selected, the toolbar shows its style,
+    /// and a style picked there applies to it as well as to the next annotation.
     @Published var selectedAnnotationID: UUID?
     /// A blur/pixelate region being dragged out; rendered live but not yet in `state`.
     @Published var regionDraft: Annotation? {
@@ -168,8 +168,15 @@ final class EditorModel: ObservableObject {
     /// previewSource pixels per fullSource pixel (≤ 1).
     let previewScale: CGFloat
     private let colorSpace: CGColorSpace
-    private let renderQueue = DispatchQueue(label: "dev.loupe.render", qos: .userInitiated)
-    private let latestRender = RenderToken()
+    private let renderQueue = DispatchQueue(label: "dev.loupe.render", qos: .userInteractive)
+    /// A preview render is running; and the state changed since it started.
+    private var isRendering = false
+    private var needsAnotherRender = false
+    /// Preview pixels per `previewSource` pixel that the screen needs (≤ 1; see
+    /// `updatePreviewResolution`).
+    private var previewResolution: CGFloat = 1
+    /// GPU surfaces the preview renders into. Only used on `renderQueue`.
+    private let previewSurfaces = PreviewSurfacePool()
     private var toastTask: Task<Void, Never>?
     private var backgroundImages: [String: CGImage] = [:]
     private var unloadableBackgroundPath: String?
@@ -441,9 +448,8 @@ final class EditorModel: ObservableObject {
         pan = clampedPan(newPan)
     }
 
+    /// Two-finger scrolling moves the image around the canvas, at any zoom.
     func pan(by delta: CGSize) {
-        // While cropping, panning is always allowed: the crop may reach past the view.
-        guard zoom > 1 || isCropping else { return }
         pan = clampedPan(CGSize(width: pan.width + delta.width, height: pan.height + delta.height))
     }
 
@@ -462,18 +468,11 @@ final class EditorModel: ObservableObject {
         Int((zoomViewport.scale * zoom * 100).rounded())
     }
 
-    /// Keeps at least part of the image on screen.
+    /// Keeps at least 80 points of the image (or, cropping, of the canvas) on screen.
     private func clampedPan(_ pan: CGSize) -> CGSize {
         let (canvas, fit, _) = zoomViewport
-        if isCropping {
-            // Keep some of the canvas in view, but allow panning out toward a far-reaching crop.
-            let maxX = (fit.width * zoom + canvas.width) / 2 - 40
-            let maxY = (fit.height * zoom + canvas.height) / 2 - 40
-            return CGSize(width: min(max(pan.width, -maxX), maxX), height: min(max(pan.height, -maxY), maxY))
-        }
-        let maxX = max(0, (fit.width * zoom - canvas.width) / 2 + 60)
-        let maxY = max(0, (fit.height * zoom - canvas.height) / 2 + 60)
-        guard zoom > 1 else { return .zero }
+        let maxX = max(0, (fit.width * zoom + canvas.width) / 2 - 80)
+        let maxY = max(0, (fit.height * zoom + canvas.height) / 2 - 80)
         return CGSize(width: min(max(pan.width, -maxX), maxX), height: min(max(pan.height, -maxY), maxY))
     }
 
@@ -509,8 +508,20 @@ final class EditorModel: ObservableObject {
 
     // MARK: - Rendering
 
+    /// Renders the preview off the main thread. One render runs at a time: changes made
+    /// meanwhile are picked up by one more render as soon as it finishes, and every
+    /// finished frame is shown, so a dragged slider updates the image continuously.
     private func scheduleRender() {
-        let token = latestRender.next()
+        if isRendering {
+            needsAnotherRender = true
+        } else {
+            startRender()
+        }
+    }
+
+    private func startRender() {
+        isRendering = true
+        needsAnotherRender = false
         var state = self.state
         if let regionDraft { state.annotations.append(regionDraft) }
         let isCropping = self.isCropping
@@ -521,16 +532,15 @@ final class EditorModel: ObservableObject {
         if isCropping, let crop { requestedRenderCanvas = crop }
         let source = previewSource
         let colorSpace = self.colorSpace
-        let latest = latestRender
         let pixelsPerPoint = screenshot.scale * previewScale
         let previewScale = self.previewScale
+        let resolution = previewResolution
+        let surfaces = previewSurfaces
         // The live canvas draws vector annotations on top of the preview,
         // except while cropping (when the canvas is hidden).
         let includeVector = isCropping
 
         renderQueue.async {
-            // Skip frames that were superseded while a slider was moving.
-            guard latest.isCurrent(token) else { return }
             let output = Self.render(
                 source,
                 state: state,
@@ -540,20 +550,76 @@ final class EditorModel: ObservableObject {
                 pixelsPerPoint: pixelsPerPoint,
                 includeVectorAnnotations: includeVector
             )
-            // A crop reaching far past the image can be huge; the preview only needs to fill the window.
-            let maxDimension: CGFloat = 4096
+            // Only as many pixels as the screen shows (a crop reaching far past the
+            // image can be huge), scaled down on the GPU with a high-quality filter.
             let largest = max(output.extent.width, output.extent.height)
-            let shrink = largest > maxDimension ? maxDimension / largest : 1
-            let shrunk = shrink < 1 ? output.transformed(by: CGAffineTransform(scaleX: shrink, y: shrink)) : output
-            let image = Self.context.createCGImage(shrunk, from: shrunk.extent.integral, format: .RGBA8, colorSpace: colorSpace)
+            let shrink = min(resolution, 4096 / largest)
+            var scaled = output
+            if shrink < 1 {
+                let size = CGSize(
+                    width: max(1, (output.extent.width * shrink).rounded(.down)),
+                    height: max(1, (output.extent.height * shrink).rounded(.down))
+                )
+                // Resampled in gamma-encoded space, like Preview and browsers: in Core
+                // Image's linear space, thin dark text would thin out and lighten.
+                scaled = output.clampedToExtent()
+                    .applyingFilter("CILinearToSRGBToneCurve")
+                    .applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: shrink, kCIInputAspectRatioKey: 1.0])
+                    .applyingFilter("CISRGBToneCurveToLinear")
+                    .cropped(to: CGRect(origin: .zero, size: size))
+            }
+            let frame = Self.renderPreviewFrame(scaled, colorSpace: colorSpace, surfaces: surfaces)
             DispatchQueue.main.async { [weak self] in
-                guard let self, latest.isCurrent(token) else { return }
-                self.preview = image
-                self.previewState = state
-                self.previewShrink = shrink
-                if let crop, isCropping { self.previewCropCanvas = crop }
+                guard let self else { return }
+                self.isRendering = false
+                // A frame from before entering or leaving crop mode covers the wrong area
+                // (a render for the new mode is already pending).
+                if let frame, isCropping == self.isCropping {
+                    self.showPreview(frame, state: state, cropCanvas: isCropping ? crop : nil)
+                }
+                if self.needsAnotherRender { self.startRender() }
             }
         }
+    }
+
+    /// Renders `image` (origin at zero) into a GPU surface, waiting for the GPU to finish.
+    nonisolated private static func renderPreviewFrame(_ image: CIImage, colorSpace: CGColorSpace, surfaces: PreviewSurfacePool) -> PreviewFrame? {
+        let extent = image.extent
+        guard let surface = surfaces.surface(width: Int(extent.width), height: Int(extent.height), colorSpace: colorSpace) else {
+            return nil
+        }
+        let destination = CIRenderDestination(ioSurface: surface)
+        destination.colorSpace = colorSpace
+        // Row 0 at the top, as the layer shows it.
+        destination.isFlipped = true
+        do {
+            try context.startTask(toRender: image, from: extent, to: destination, at: .zero).waitUntilCompleted()
+        } catch {
+            return nil
+        }
+        return PreviewFrame(surface: surface, image: image, colorSpace: colorSpace)
+    }
+
+    private func showPreview(_ frame: PreviewFrame, state: EditState, cropCanvas: CGRect?) {
+        let layout = PreviewLayout(
+            orientation: state.orientation,
+            crop: state.crop,
+            cropCanvas: cropCanvas ?? previewLayout?.cropCanvas ?? Self.fullRect
+        )
+        // Assigning a @Published property updates the whole editor, even with an equal value.
+        if layout != previewLayout { previewLayout = layout }
+        previewFrames.send(frame)
+    }
+
+    /// Called by the canvas as it lays out, with how many screen pixels show one point
+    /// of the image. The preview renders at that size, so the screen shows it 1:1 and a
+    /// smaller window renders fewer pixels; in 5% steps, so small layout changes don't re-render.
+    func updatePreviewResolution(screenPixelsPerImagePoint: CGFloat) {
+        let needed = screenPixelsPerImagePoint / (screenshot.scale * previewScale)
+        let stepped = min(1, max(0.05, (needed * 20).rounded(.up) / 20))
+        guard stepped != previewResolution else { return }
+        previewResolution = stepped
+        scheduleRender()
     }
 
     /// The edited image at full resolution.
@@ -710,6 +776,7 @@ final class EditorModel: ObservableObject {
         return annotation
     }
 
+    /// Adds a finished drawing and selects it, so it can be adjusted straight away.
     func addAnnotation(_ annotation: Annotation) {
         checkpoint()
         state.annotations.append(annotation)
@@ -772,33 +839,60 @@ final class EditorModel: ObservableObject {
     var toolbarSize: Double {
         guard let selected = selectedAnnotation else { return annotationSize }
         let pixelsPerPoint = screenshot.scale
+        let range = Self.annotationSizeRange
         if selected.kind == .text || selected.kind == .step {
-            return min(max(Double((selected.fontSize / pixelsPerPoint - 10) / 4), 1), 12)
+            return min(max(Double((selected.fontSize / pixelsPerPoint - 10) / 4), range.lowerBound), range.upperBound)
         }
-        return min(max(Double(selected.strokeWidth / pixelsPerPoint), 1), 12)
+        return min(max(Double(selected.strokeWidth / pixelsPerPoint), range.lowerBound), range.upperBound)
     }
 
-    /// Recolors only the selected layer; with nothing selected, sets the color
-    /// for the next annotation.
+    /// What the toolbar's color and size apply to: the selected layer's kind, or the
+    /// current tool's (nil for the select tool with nothing selected).
+    var styleTargetKind: Annotation.Kind? { selectedAnnotation?.kind ?? tool.kind }
+
+    /// False for blur and pixelate, which have no color or size.
+    var toolbarStyleApplies: Bool { styleTargetKind?.isRegionEffect != true }
+
+    /// The size as drawn, in points: font size for text and counters, the band's
+    /// width for the highlighter, otherwise the stroke width.
+    var toolbarSizeLabel: String {
+        guard toolbarStyleApplies else { return "–" }
+        let pixelsPerPoint = screenshot.scale
+        let points: Double
+        if let selected = selectedAnnotation {
+            points = switch selected.kind {
+            case .text, .step: selected.fontSize / pixelsPerPoint
+            case .highlighter: AnnotationRenderer.highlighterWidth(selected) / pixelsPerPoint
+            default: selected.strokeWidth / pixelsPerPoint
+            }
+        } else {
+            points = switch tool.kind {
+            case .text, .step: 10 + annotationSize * 4
+            case .highlighter: annotationSize * 4
+            default: annotationSize
+            }
+        }
+        return "\(Int(points.rounded())) pt"
+    }
+
+    /// Sets the color for the next annotation, and recolors the selected layer, if any
+    /// (like Preview: picking a color right after drawing changes that shape and the next).
     func setAnnotationColor(_ color: RGBAColor, checkpoint shouldCheckpoint: Bool = true) {
+        annotationColor = color
         if let id = selectedAnnotationID {
             updateAnnotation(id, checkpoint: shouldCheckpoint) { $0.color = color }
-        } else {
-            annotationColor = color
         }
     }
 
-    /// Resizes only the selected layer; with nothing selected, sets the size
-    /// for the next annotation.
+    /// Sets the size for the next annotation, and resizes the selected layer, if any.
     func setAnnotationSize(_ size: Double, checkpoint shouldCheckpoint: Bool) {
+        annotationSize = size
         if let id = selectedAnnotationID {
             let pixelsPerPoint = screenshot.scale
             updateAnnotation(id, checkpoint: shouldCheckpoint) {
                 $0.strokeWidth = size * pixelsPerPoint
                 $0.fontSize = (10 + size * 4) * pixelsPerPoint
             }
-        } else {
-            annotationSize = size
         }
     }
 
@@ -808,12 +902,12 @@ final class EditorModel: ObservableObject {
     /// (top-left origin): orientation, then crop, then backdrop padding.
     /// Also returns the canvas size and where the screenshot sits in it.
     /// Maps source pixels (top-left origin) to the edited image's pixels (after
-    /// orientation and crop, before the background), for `state`.
-    func sourceToContent(for state: EditState) -> (transform: CGAffineTransform, size: CGSize) {
+    /// orientation and crop, before the background).
+    func sourceToContent(orientation: [OrientationOp], crop: CGRect?) -> (transform: CGAffineTransform, size: CGSize) {
         let source = CGSize(width: screenshot.image.width, height: screenshot.image.height)
-        var (transform, oriented) = Self.orientationTransform(size: source, orientation: state.orientation)
+        var (transform, oriented) = Self.orientationTransform(size: source, orientation: orientation)
         var size = oriented
-        if let crop = state.crop {
+        if let crop {
             transform = transform.concatenating(CGAffineTransform(
                 translationX: -(crop.minX * oriented.width).rounded(),
                 y: -(crop.minY * oriented.height).rounded()
@@ -973,19 +1067,68 @@ private extension CIImage {
     }
 }
 
-/// Monotonic counter shared with the render queue to drop stale frames.
-private final class RenderToken: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = 0
+/// A rendered preview: pixels on the GPU, which the canvas's layer shows without copying.
+final class PreviewFrame: @unchecked Sendable {
+    let surface: IOSurface
+    /// What was rendered into `surface`, for drawing it elsewhere (snapshots).
+    let image: CIImage
+    let colorSpace: CGColorSpace
 
-    func next() -> Int {
-        lock.lock(); defer { lock.unlock() }
-        value += 1
-        return value
+    init(surface: IOSurface, image: CIImage, colorSpace: CGColorSpace) {
+        self.surface = surface
+        self.image = image
+        self.colorSpace = colorSpace
     }
 
-    func isCurrent(_ token: Int) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return value == token
+    /// A CPU copy, for drawing into a non-screen context (cacheDisplay, printing).
+    func makeCGImage() -> CGImage? {
+        CIContext().createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: colorSpace)
     }
+}
+
+/// Reuses preview surfaces of the current size. The last two handed out are never
+/// reused (one may be on screen, the next about to be), nor any the window server is
+/// still showing. Only used on the render queue.
+final class PreviewSurfacePool: @unchecked Sendable {
+    private var surfaces: [IOSurface] = []
+    private var recent: [IOSurface] = []
+
+    func surface(width: Int, height: Int, colorSpace: CGColorSpace) -> IOSurface? {
+        surfaces.removeAll { $0.width != width || $0.height != height }
+        recent.removeAll { $0.width != width || $0.height != height }
+        let surface: IOSurface
+        if let free = surfaces.first(where: { candidate in !candidate.isInUse && !recent.contains { $0 === candidate } }) {
+            surface = free
+        } else {
+            guard let created = IOSurface(properties: [
+                .width: width,
+                .height: height,
+                .bytesPerElement: 4,
+                .pixelFormat: kCVPixelFormatType_32BGRA,
+            ]) else { return nil }
+            // So the window server color-matches it to the display.
+            if let colorSpaceData = colorSpace.copyPropertyList() {
+                IOSurfaceSetValue(created, kIOSurfaceColorSpace, colorSpaceData)
+            }
+            surfaces.append(created)
+            if surfaces.count > 4, let stale = surfaces.firstIndex(where: { old in !old.isInUse && !recent.contains { $0 === old } }) {
+                surfaces.remove(at: stale)
+            }
+            surface = created
+        }
+        recent.append(surface)
+        if recent.count > 2 { recent.removeFirst() }
+        return surface
+    }
+}
+
+/// The geometry of a rendered preview, which the editor lays out the image and drawings with.
+struct PreviewLayout: Equatable {
+    /// The orientation and crop it was rendered with. Drawings are positioned with
+    /// these, so they move in the same frame as the image when a rotate or crop lands.
+    var orientation: [OrientationOp]
+    var crop: CGRect?
+    /// The area (normalized) the latest crop-mode preview covers. It's wider
+    /// than `cropCanvas` so dragging past the visible area already has pixels.
+    var cropCanvas: CGRect
 }
