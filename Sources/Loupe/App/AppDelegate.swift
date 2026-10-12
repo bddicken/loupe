@@ -7,10 +7,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Preferences.registerDefaults()
         NSApp.mainMenu = MainMenu.build()
+        DockPresence.startObserving()
         _ = UpdateController.shared // Starts Sparkle's scheduled update checks.
         setUpStatusItem()
         ShortcutCenter.shared.apply()
         NotificationCenter.default.addObserver(forName: ShortcutCenter.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rebuildStatusMenu() }
+        }
+        NotificationCenter.default.addObserver(forName: UpdateController.pendingUpdateDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.rebuildStatusMenu() }
         }
         NotificationCenter.default.addObserver(forName: ScreenRecordingController.stateDidChange, object: nil, queue: .main) { [weak self] _ in
@@ -52,7 +56,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        EditorWindowController.confirmQuit() ? .terminateNow : .terminateCancel
+        guard ScreenRecordingController.shared.confirmQuit(),
+              EditorWindowController.confirmQuit(),
+              QuickAccessManager.shared.confirmQuit() else { return .terminateCancel }
+        return .terminateNow
+    }
+
+    /// Opening Loupe again (Finder, Spotlight) while it runs shows Settings, since the
+    /// menu bar icon can be hidden (behind the notch, or by a menu bar manager).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Thumbnails and pins count as visible windows to AppKit, so check for real ones.
+        if !DockPresence.hasWindows { SettingsWindowController.show() }
+        return true
     }
 
     // MARK: - Status item
@@ -84,10 +99,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Open Image in Editor…", action: #selector(openImage), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "").target = self
+        let updateTitle = UpdateController.shared.pendingUpdateVersion.map { "Update to Loupe \($0)…" } ?? "Check for Updates…"
+        menu.addItem(withTitle: updateTitle, action: #selector(checkForUpdates(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Quit Loupe", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        statusItem.menu = menu
+        // While recording the item is a stop button (no menu); it gets the menu back afterwards.
+        let recorder = ScreenRecordingController.shared
+        if !recorder.isActive || recorder.state == .countingDown {
+            statusItem.menu = menu
+        }
     }
 
     /// While recording, the menu bar item becomes a stop button with the elapsed time.

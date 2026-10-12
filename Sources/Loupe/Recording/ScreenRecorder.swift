@@ -99,6 +99,11 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
         micSession = session
     }
 
+    /// Changes which windows are recorded, mid-recording.
+    func updateFilter(_ filter: SCContentFilter) async throws {
+        try await stream?.updateContentFilter(filter)
+    }
+
     /// Stops capturing and finalizes the file. Returns the movie's duration in seconds.
     func stop() async throws -> Double {
         let end = CMClockGetTime(CMClockGetHostTimeClock())

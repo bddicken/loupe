@@ -5,7 +5,6 @@ import SwiftUI
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private static var open: [EditorWindowController] = []
-    static var hasOpenEditors: Bool { !open.isEmpty }
 
     private let model: EditorModel
     private var cancellables: Set<AnyCancellable> = []
@@ -13,8 +12,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     static func open(_ screenshot: Screenshot) {
         let controller = EditorWindowController(screenshot: screenshot)
         open.append(controller)
-        // Show in the Dock and ⌘-Tab while an editor is open.
-        NSApp.setActivationPolicy(.regular)
+        DockPresence.show()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -109,9 +107,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         Self.open.removeAll { $0 === self }
-        if Self.open.isEmpty {
-            NSApp.setActivationPolicy(.accessory)
-        }
     }
 }
 

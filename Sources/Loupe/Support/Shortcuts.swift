@@ -39,6 +39,12 @@ enum Shortcut: Int, CaseIterable {
 
     @MainActor
     func perform() {
+        // An open dialog (a Save panel, an alert) would sit under the capture overlay and
+        // block its clicks and keys, so don't start one. Stopping a recording is fine.
+        if NSApp.modalWindow != nil, !(self == .recordScreen && ScreenRecordingController.shared.state == .recording) {
+            NSSound.beep()
+            return
+        }
         switch self {
         case .area: CaptureController.shared.captureArea(mode: .quick)
         case .adjustableArea: CaptureController.shared.captureArea(mode: .adjustable)

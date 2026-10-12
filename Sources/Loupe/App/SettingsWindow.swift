@@ -22,6 +22,7 @@ enum SettingsWindowController {
             self.window = window
         }
         model.refresh()
+        DockPresence.show()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

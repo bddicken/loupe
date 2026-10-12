@@ -25,6 +25,11 @@ final class SelectionView: NSView {
     /// Windows on this display in view coordinates, frontmost first.
     private let windows: [(info: WindowInfo, frame: NSRect)]
     private var hoveredWindow: (info: WindowInfo, frame: NSRect)?
+    /// The crosshair and magnifier follow the pointer as their own small views, so a
+    /// mouse move moves them instead of repainting the whole display.
+    private let horizontalLine = CrosshairLine(vertical: false)
+    private let verticalLine = CrosshairLine(vertical: true)
+    private let magnifier: MagnifierView
 
     private let handleRadius: CGFloat = 4.5
     private let handleHitSlop: CGFloat = 8
@@ -49,8 +54,13 @@ final class SelectionView: NSView {
         buttonBar.orientation = .horizontal
         buttonBar.spacing = 8
         buttonBar.isHidden = true
+        magnifier = MagnifierView(snapshot: snapshot)
 
         super.init(frame: .zero)
+        for view in [horizontalLine, verticalLine, magnifier] {
+            view.isHidden = true
+            addSubview(view)
+        }
 
         cancel.target = self
         cancel.action = #selector(cancelPressed)
@@ -81,8 +91,7 @@ final class SelectionView: NSView {
     func clearSelection() {
         selection = nil
         dragState = .none
-        updateButtonBar()
-        needsDisplay = true
+        redraw()
     }
 
     /// The selected region cropped from the snapshot at full pixel resolution.
@@ -179,16 +188,20 @@ final class SelectionView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        let previousWindow = hoveredWindow?.info.id
         mouseLocation = bounds.contains(point) ? snap(point) : nil
         hoveredWindow = selection == nil ? window(at: point) : nil
         updateCursor(at: point)
-        needsDisplay = true
+        // Only the window highlight needs the full-display view repainted.
+        if hoveredWindow?.info.id != previousWindow { needsDisplay = true }
+        updatePointerChrome()
     }
 
     override func mouseExited(with event: NSEvent) {
         mouseLocation = nil
         hoveredWindow = nil
         needsDisplay = true
+        updatePointerChrome()
     }
 
     override func cursorUpdate(with event: NSEvent) {
@@ -207,9 +220,9 @@ final class SelectionView: NSView {
             session?.cancel()
         case 36, 76: // Return, Enter
             if selection == nil, mode == .record {
-                // Nothing selected: record the whole display.
-                session?.selectionDidBegin(in: self)
-                selection = bounds
+                // Nothing selected: record the whole display under the pointer.
+                if let view = session?.selectDisplayUnderMouse() { session?.capture(from: view) }
+                return
             }
             if selection != nil { session?.capture(from: self) }
         case 123, 124, 125, 126: // Arrows nudge the selection.
@@ -228,6 +241,11 @@ final class SelectionView: NSView {
         default:
             super.keyDown(with: event)
         }
+    }
+
+    func selectWholeDisplay() {
+        selection = bounds
+        redraw()
     }
 
     @objc private func cancelPressed() { session?.cancel() }
@@ -305,7 +323,36 @@ final class SelectionView: NSView {
 
     private func redraw() {
         updateButtonBar()
+        updatePointerChrome()
         needsDisplay = true
+    }
+
+    /// Shows the crosshair (nothing selected yet) and the magnifier (also while
+    /// creating or resizing a selection) at the pointer.
+    private func updatePointerChrome() {
+        let showsMagnifier: Bool
+        switch dragState {
+        case .none: showsMagnifier = selection == nil
+        case .creating, .resizing: showsMagnifier = true
+        case .moving: showsMagnifier = false
+        }
+        guard let point = mouseLocation else {
+            horizontalLine.isHidden = true
+            verticalLine.isHidden = true
+            magnifier.isHidden = true
+            return
+        }
+        let showsCrosshair = selection == nil
+        horizontalLine.isHidden = !showsCrosshair
+        verticalLine.isHidden = !showsCrosshair
+        if showsCrosshair {
+            horizontalLine.frame = NSRect(x: bounds.minX, y: point.y, width: bounds.width, height: 1)
+            verticalLine.frame = NSRect(x: point.x, y: bounds.minY, width: 1, height: bounds.height)
+        }
+        magnifier.isHidden = !showsMagnifier
+        if showsMagnifier {
+            magnifier.show(at: point, in: bounds)
+        }
     }
 
     private func updateButtonBar() {
@@ -358,20 +405,6 @@ final class SelectionView: NSView {
             let hint = pill("Drag to select an area to record, click a window, or press Return to record the full screen. Esc cancels.")
             hint.draw(at: NSPoint(x: bounds.midX - hint.size.width / 2, y: bounds.maxY - hint.size.height - 48))
         }
-
-        guard let mouseLocation else { return }
-        let showsMagnifier: Bool
-        switch dragState {
-        case .none: showsMagnifier = selection == nil
-        case .creating, .resizing: showsMagnifier = true
-        case .moving: showsMagnifier = false
-        }
-        if selection == nil {
-            drawCrosshair(at: mouseLocation)
-        }
-        if showsMagnifier {
-            drawMagnifier(at: mouseLocation, in: context)
-        }
     }
 
     private func drawWindowHighlight(_ window: (info: WindowInfo, frame: NSRect)) {
@@ -422,12 +455,34 @@ final class SelectionView: NSView {
         label.draw(at: origin)
     }
 
-    private func drawCrosshair(at point: NSPoint) {
+    private func pill(_ text: String) -> Pill {
+        Pill(text: text)
+    }
+}
+
+/// One dashed crosshair line (1pt thick), moved with the pointer.
+private final class CrosshairLine: NSView {
+    private let vertical: Bool
+
+    init(vertical: Bool) {
+        self.vertical = vertical
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: bounds.minX, y: point.y + 0.5))
-        path.line(to: NSPoint(x: bounds.maxX, y: point.y + 0.5))
-        path.move(to: NSPoint(x: point.x + 0.5, y: bounds.minY))
-        path.line(to: NSPoint(x: point.x + 0.5, y: bounds.maxY))
+        if vertical {
+            path.move(to: NSPoint(x: 0.5, y: bounds.minY))
+            path.line(to: NSPoint(x: 0.5, y: bounds.maxY))
+        } else {
+            path.move(to: NSPoint(x: bounds.minX, y: 0.5))
+            path.line(to: NSPoint(x: bounds.maxX, y: 0.5))
+        }
         path.lineWidth = 1
         NSColor.black.withAlphaComponent(0.35).setStroke()
         path.stroke()
@@ -435,24 +490,52 @@ final class SelectionView: NSView {
         NSColor.white.withAlphaComponent(0.9).setStroke()
         path.stroke()
     }
+}
 
-    /// The loupe: a zoomed-in view of the pixels under the cursor.
-    private func drawMagnifier(at point: NSPoint, in context: CGContext) {
-        let pixelsAcross = 15
-        let cell: CGFloat = 8
-        let side = CGFloat(pixelsAcross) * cell
+/// The loupe: a zoomed-in view of the pixels under the cursor, with its coordinates.
+private final class MagnifierView: NSView {
+    private let snapshot: DisplaySnapshot
+    private let pixelsAcross = 15
+    private let cell: CGFloat = 8
+    private var side: CGFloat { CGFloat(pixelsAcross) * cell }
+    /// Room around the loupe for its shadow, and below it for the coordinate label.
+    private let margin: CGFloat = 12
+    private let labelSpace: CGFloat = 24
+    /// The pointer, in the selection view (y-up), and that view's height.
+    private var point: NSPoint = .zero
+    private var displayHeight: CGFloat = 0
+
+    init(snapshot: DisplaySnapshot) {
+        self.snapshot = snapshot
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(at point: NSPoint, in bounds: NSRect) {
+        var loupe = NSRect(x: point.x + 24, y: point.y - 24 - side, width: side, height: side)
+        if loupe.maxX > bounds.maxX - 4 { loupe.origin.x = point.x - 24 - side }
+        if loupe.minY < bounds.minY + 30 { loupe.origin.y = point.y + 24 }
+        self.point = point
+        displayHeight = bounds.height
+        frame = NSRect(x: loupe.minX - margin, y: loupe.minY - margin - labelSpace,
+                       width: side + margin * 2, height: side + margin * 2 + labelSpace)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         let scale = snapshot.scale
-
         let centerX = Int((point.x * scale).rounded(.down))
-        let centerY = Int(((bounds.height - point.y) * scale).rounded(.down))
+        let centerY = Int(((displayHeight - point.y) * scale).rounded(.down))
         let half = pixelsAcross / 2
         let requested = CGRect(x: centerX - half, y: centerY - half, width: pixelsAcross, height: pixelsAcross)
         let available = requested.intersection(CGRect(x: 0, y: 0, width: snapshot.image.width, height: snapshot.image.height))
 
-        var frame = NSRect(x: point.x + 24, y: point.y - 24 - side, width: side, height: side)
-        if frame.maxX > bounds.maxX - 4 { frame.origin.x = point.x - 24 - side }
-        if frame.minY < bounds.minY + 30 { frame.origin.y = point.y + 24 }
-
+        let frame = NSRect(x: margin, y: margin + labelSpace, width: side, height: side)
         let shape = CGPath(roundedRect: frame, cornerWidth: 10, cornerHeight: 10, transform: nil)
         context.saveGState()
         context.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor.black.withAlphaComponent(0.5).cgColor)
@@ -486,12 +569,8 @@ final class SelectionView: NSView {
         context.setLineWidth(1.5)
         context.strokePath()
 
-        let label = pill("\(Int(point.x.rounded())), \(Int((bounds.height - point.y).rounded()))")
+        let label = Pill(text: "\(Int(point.x.rounded())), \(Int((displayHeight - point.y).rounded()))")
         label.draw(at: NSPoint(x: frame.midX - label.size.width / 2, y: frame.minY - label.size.height - 4))
-    }
-
-    private func pill(_ text: String) -> Pill {
-        Pill(text: text)
     }
 }
 

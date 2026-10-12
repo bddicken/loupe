@@ -29,7 +29,7 @@ final class QuickAccessManager {
         let panel = QuickAccessPanel(size: size) { dismiss in
             RecordingQuickAccessView(recording: recording, size: size, dismiss: dismiss)
         }
-        panel.holdsUnsavedWork = { recording.isTemporary }
+        panel.unsavedFile = { recording.isTemporary ? recording.fileURL : nil }
         present(panel)
     }
 
@@ -39,8 +39,10 @@ final class QuickAccessManager {
             self.dismiss(panel)
         }
         panels.insert(panel, at: 0)
-        // Push out the oldest thumbnails, but never an unsaved recording: it's the only way back to it.
-        while panels.count > maxPanels, let oldest = panels.lastIndex(where: { !$0.holdsUnsavedWork() }) {
+        // Push out the oldest thumbnails (never the new one), but never an unsaved
+        // recording either: it's the only way back to it.
+        while panels.count > maxPanels,
+              let oldest = panels.dropFirst().lastIndex(where: { $0.unsavedFile() == nil }) {
             panels.remove(at: oldest).orderOut(nil)
         }
 
@@ -51,6 +53,26 @@ final class QuickAccessManager {
             context.duration = 0.18
             panel.animator().alphaValue = 1
         }
+    }
+
+    /// Asks before quitting with unsaved recordings, which only exist in the temporary
+    /// folder; deletes them if the user goes ahead. False cancels the quit.
+    func confirmQuit() -> Bool {
+        let files = panels.compactMap { $0.unsavedFile() }
+        guard !files.isEmpty else { return true }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = files.count == 1
+            ? "You have an unsaved recording."
+            : "You have \(files.count) unsaved recordings."
+        alert.informativeText = files.count == 1
+            ? "If you quit, it will be deleted. To keep it, click Save on its thumbnail."
+            : "If you quit, they will be deleted. To keep one, click Save on its thumbnail."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: files.count == 1 ? "Delete and Quit" : "Delete All and Quit").hasDestructiveAction = true
+        guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        files.forEach { try? FileManager.default.removeItem(at: $0) }
+        return true
     }
 
     func dismiss(_ panel: QuickAccessPanel) {
@@ -85,8 +107,8 @@ final class QuickAccessManager {
 
 final class QuickAccessPanel: NSPanel {
     var onDismiss: (() -> Void)?
-    /// True while closing this thumbnail would lose something (an unsaved recording).
-    var holdsUnsavedWork: () -> Bool = { false }
+    /// The file that closing this thumbnail would lose (an unsaved recording), if any.
+    var unsavedFile: () -> URL? = { nil }
 
     @MainActor
     init<Content: View>(size: NSSize, content: (_ dismiss: @escaping () -> Void) -> Content) {
@@ -375,6 +397,7 @@ private struct RecordingQuickAccessView: View {
                 return
             } catch {
                 // e.g. the save folder is on a drive that's gone: let the user pick somewhere else.
+                NSApp.activate(ignoringOtherApps: true)
                 NSAlert(error: error).runModal()
             }
         }
