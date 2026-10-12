@@ -88,8 +88,9 @@ final class ScreenRecordingController {
         Task {
             do {
                 let duration = try await recorder.stop()
-                try await finish(movie: recorder.outputURL, duration: duration)
+                await finish(movie: recorder.outputURL, duration: duration)
             } catch {
+                // The movie couldn't be finalized, so there's nothing playable to keep.
                 try? FileManager.default.removeItem(at: recorder.outputURL)
                 CaptureController.shared.showCaptureError(error, title: "Couldn’t save the recording")
             }
@@ -192,7 +193,8 @@ final class ScreenRecordingController {
 
         let recorder = try ScreenRecorder(configuration: configuration, outputURL: url)
         recorder.onStreamError = { [weak self] _ in
-            // e.g. sharing was stopped from the system menu: keep what was recorded.
+            // e.g. sharing was stopped from the system menu, or the file can't be
+            // written (disk full): stop now rather than recording into the void.
             self?.stop()
         }
         try await recorder.start()
@@ -237,20 +239,36 @@ final class ScreenRecordingController {
     }
 
     /// Moves the finished movie into place (converting to GIF if asked) and shows it.
-    private func finish(movie: URL, duration: Double) async throws {
+    /// If that fails, the recording is still shown from its temporary file rather than lost.
+    private func finish(movie: URL, duration: Double) async {
         let format = Preferences.recordingFormat
-        let destination = Preferences.autoSave
+        var destination = Preferences.autoSave
             ? RecordingExport.newFileURL(for: date, format: format)
             : FileManager.default.temporaryDirectory
                 .appendingPathComponent("Loupe", isDirectory: true)
                 .appendingPathComponent(RecordingExport.defaultFileName(for: date, format: format))
-        try? FileManager.default.removeItem(at: destination)
+        var isTemporary = !Preferences.autoSave
 
-        if format == .gif {
-            try await GIFExporter.export(movie: movie, to: destination)
-            try? FileManager.default.removeItem(at: movie)
-        } else {
-            try FileManager.default.moveItem(at: movie, to: destination)
+        do {
+            if Preferences.autoSave {
+                try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            } else {
+                try? FileManager.default.removeItem(at: destination)
+            }
+            if format == .gif {
+                try await GIFExporter.export(movie: movie, to: destination)
+                try? FileManager.default.removeItem(at: movie)
+            } else {
+                try FileManager.default.moveItem(at: movie, to: destination)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: destination) // A partly written GIF.
+            destination = movie
+            isTemporary = true
+            CaptureController.shared.showCaptureError(
+                error,
+                title: format == .gif ? "Couldn’t convert the recording to a GIF" : "Couldn’t save the recording"
+            )
         }
 
         NSLog("Loupe: saved recording (%.1fs) to %@", duration, destination.path)
@@ -261,14 +279,14 @@ final class ScreenRecordingController {
             duration: duration,
             thumbnail: await RecordingExport.thumbnail(for: destination),
             scale: area?.screen?.backingScaleFactor ?? 2,
-            isTemporary: !Preferences.autoSave
+            isTemporary: isTemporary
         )
         if Preferences.copyToClipboard {
             RecordingExport.copyToPasteboard(recording.fileURL)
         }
         if Preferences.showQuickAccess {
             QuickAccessManager.shared.show(recording)
-        } else if !Preferences.autoSave {
+        } else if isTemporary {
             // Nowhere else to find it: reveal the temporary file.
             NSWorkspace.shared.activateFileViewerSelecting([destination])
         }

@@ -53,6 +53,9 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     init(model: EditorModel) {
         self.model = model
         super.init(frame: .zero)
+        MainActor.assumeIsolated {
+            model.commitTextEditing = { [weak self] in self?.endTextEditing() }
+        }
     }
 
     @available(*, unavailable)
@@ -105,10 +108,10 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         context.clip(to: contentRect)
         context.concatenate(transform)
         for annotation in annotations where annotation.id != editing?.annotation.id {
-            AnnotationRenderer.draw(annotation, in: context)
+            AnnotationRenderer.draw(annotation, in: context, orientation: transform)
         }
         if let draft {
-            AnnotationRenderer.draw(draft, in: context)
+            AnnotationRenderer.draw(draft, in: context, orientation: transform)
         }
         context.restoreGState()
 
@@ -118,7 +121,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         if let selected = annotations.first(where: { $0.id == selectedID }), selected.id != editing?.annotation.id {
             let handles = self.handles(for: selected)
             if case .scale = handles.first?.handle {
-                strokeDashed(AnnotationRenderer.bounds(selected).applying(transform), color: .controlAccentColor)
+                strokeDashed(AnnotationRenderer.bounds(selected, orientation: transform).applying(transform), color: .controlAccentColor)
             }
             drawHandles(handles.map { $0.point.applying(transform) }, in: context)
         }
@@ -154,7 +157,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
                 (.corner(3), CGPoint(x: r.minX, y: r.maxY)),
             ]
         case .text, .step, .pen, .highlighter:
-            let r = AnnotationRenderer.bounds(annotation)
+            let r = AnnotationRenderer.bounds(annotation, orientation: transform)
             return [
                 (.scale(0), CGPoint(x: r.minX, y: r.minY)),
                 (.scale(1), CGPoint(x: r.maxX, y: r.minY)),
@@ -271,7 +274,7 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
                     case .corner: annotation.points = [resize.anchor, target]
                     case .scale:
                         // Uniform scale, keeping the opposite corner fixed.
-                        let box = AnnotationRenderer.bounds(resize.original)
+                        let box = AnnotationRenderer.bounds(resize.original, orientation: transform)
                         let factor = max(
                             abs(point.x - resize.anchor.x) / max(box.width, 1),
                             abs(point.y - resize.anchor.y) / max(box.height, 1),
@@ -339,13 +342,13 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     @MainActor
     private func annotation(at point: CGPoint, interior: Bool) -> Annotation? {
         let annotations = model.state.annotations
-        if let hit = annotations.reversed().first(where: { AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance) }) {
+        if let hit = annotations.reversed().first(where: { AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance, orientation: transform) }) {
             return hit
         }
         guard interior else { return nil }
         return annotations
-            .filter { AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance, interior: true) }
-            .min { area(AnnotationRenderer.bounds($0)) < area(AnnotationRenderer.bounds($1)) }
+            .filter { AnnotationRenderer.hitTest($0, at: point, tolerance: tolerance, interior: true, orientation: transform) }
+            .min { area(AnnotationRenderer.bounds($0, orientation: transform)) < area(AnnotationRenderer.bounds($1, orientation: transform)) }
     }
 
     private func area(_ rect: CGRect) -> CGFloat { rect.width * rect.height }
@@ -455,6 +458,8 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         field.delegate = nil
         field.removeFromSuperview()
+        // The typing's undo steps belong to this field; don't let a later ⌘Z replay them.
+        window?.undoManager?.removeAllActions()
 
         if isNew {
             if !text.isEmpty {

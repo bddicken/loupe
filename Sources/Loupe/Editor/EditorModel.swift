@@ -156,6 +156,10 @@ final class EditorModel: ObservableObject {
         didSet { if regionDraft != oldValue { scheduleRender() } }
     }
 
+    /// Commits a text annotation that's still being typed (set by the canvas),
+    /// so saving, copying or closing never leaves it out.
+    var commitTextEditing: (() -> Void)?
+
     private var undoStack: [EditState] = []
     private var redoStack: [EditState] = []
 
@@ -319,7 +323,18 @@ final class EditorModel: ObservableObject {
 
     func apply(_ op: OrientationOp) {
         checkpoint()
+        let size = CGSize(width: screenshot.image.width, height: screenshot.image.height)
+        let before = Self.orientationTransform(size: size, orientation: state.orientation).transform
         state.orientation.append(op)
+        let after = Self.orientationTransform(size: size, orientation: state.orientation).transform
+        // Text reads upright from its start point, so after a turn or flip it could run off the
+        // image: keep each label centered on the same spot instead.
+        for index in state.annotations.indices where state.annotations[index].kind == .text {
+            let text = state.annotations[index]
+            let center = AnnotationRenderer.bounds(text, orientation: before)
+            let moved = AnnotationRenderer.bounds(text, orientation: after)
+            state.annotations[index] = text.offsetBy(dx: center.midX - moved.midX, dy: center.midY - moved.midY)
+        }
         state.crop = state.crop.map(op.transform)
         if isCropping {
             pendingCrop = op.transform(pendingCrop)
@@ -333,6 +348,7 @@ final class EditorModel: ObservableObject {
 
     func beginCrop() {
         guard !isCropping else { return }
+        commitTextEditing?()
         resetZoom()
         pendingCrop = state.crop ?? Self.fullRect
         cropCanvas = makeCropCanvas(around: pendingCrop)
@@ -866,11 +882,13 @@ final class EditorModel: ObservableObject {
     // MARK: - Output
 
     func pin() {
+        commitTextEditing?()
         guard let image = renderFullResolution() else { return }
         PinManager.shared.pin(Screenshot(image: image, scale: screenshot.scale))
     }
 
     func copyToPasteboard() {
+        commitTextEditing?()
         guard let image = renderFullResolution() else { return }
         ImageExport.copyToPasteboard(image, scale: screenshot.scale)
         showToast("Copied to clipboard")
@@ -879,6 +897,9 @@ final class EditorModel: ObservableObject {
     /// Saves over the screenshot's file (or a new file in the save folder).
     @discardableResult
     func save() -> Bool {
+        commitTextEditing?()
+        // Only PNG and JPEG are written: an opened HEIC, TIFF, etc. is saved as a new file instead.
+        if let url = screenshot.fileURL, ImageFormat(exactly: url) == nil { return saveAs() }
         guard let image = renderFullResolution() else { return false }
         let url = screenshot.fileURL ?? ImageExport.newFileURL(for: screenshot.date)
         do {
@@ -895,9 +916,13 @@ final class EditorModel: ObservableObject {
 
     @discardableResult
     func saveAs() -> Bool {
+        commitTextEditing?()
         guard let image = renderFullResolution() else { return false }
-        let name = screenshot.fileURL?.lastPathComponent
-            ?? ImageExport.defaultFileName(for: screenshot.date, format: Preferences.imageFormat)
+        let name = screenshot.fileURL.map { url in
+            ImageFormat(exactly: url) == nil
+                ? url.deletingPathExtension().appendingPathExtension(Preferences.imageFormat.fileExtension).lastPathComponent
+                : url.lastPathComponent
+        } ?? ImageExport.defaultFileName(for: screenshot.date, format: Preferences.imageFormat)
         guard let url = ImageExport.runSavePanel(for: image, scale: screenshot.scale, suggestedName: name) else { return false }
         screenshot.fileURL = url
         savedState = state
