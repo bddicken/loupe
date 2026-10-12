@@ -35,5 +35,6 @@ turn Loupe off and on again in the Screen Recording settings.
 | ⌥⇧3 | Capture fullscreen |
 | ⌥⇧6 | Capture previous area |
 | ⌥⇧7 | Capture with self-timer |
+| ⌥⇧8 | Record screen (press again to stop) |
 
 All of these can be changed in Loupe → Settings.

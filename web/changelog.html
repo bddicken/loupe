@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loupe Changelog — What’s New in the Mac Screenshot App</title>
+  <meta name="description" content="Release notes for every version of Loupe, the free, open-source screenshot and screen recording app for Mac. Latest: 1.0.5.">
+  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="canonical" href="https://loupe.pics/changelog">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://loupe.pics/changelog">
+  <meta property="og:site_name" content="Loupe">
+  <meta property="og:title" content="Loupe changelog">
+  <meta property="og:description" content="What’s new in Loupe, the free screenshot and screen recording app for Mac.">
+  <meta property="og:image" content="https://loupe.pics/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <a class="brand" href="/"><img src="/icon.png" width="32" height="32" alt="">Loupe</a>
+      <a class="download small" href="https://github.com/bddicken/loupe/releases/download/v1.0.5/Loupe-1.0.5.dmg">Download for Mac</a>
+    </header>
+    <article class="page">
+      <h1>Changelog</h1>
+      <p class="lede">What’s new in each version of Loupe. Installed copies update automatically.</p>
+    </article>
+
+    <section class="release" id="v1.0.5">
+<h2><a href="#v1.0.5">Loupe 1.0.5</a></h2>
+<time datetime="2026-10-12">October 12, 2026</time>
+<ul>
+  <li><strong>Edits preview instantly.</strong> Dragging Exposure, Brightness and the other adjustments, background sliders, crop handles or blur regions now updates the image as you drag, instead of lagging behind or jumping once you let go. The preview renders on the GPU at the size it’s shown.</li>
+  <li><strong>Better text.</strong> Everything you type stays visible while you type it. Drag with the Text tool to make a text box that wraps at its width, and drag a text’s left or right edge to change where it wraps. Return starts a new line; Esc or clicking elsewhere finishes.</li>
+  <li><strong>Move and resize anything you’ve added.</strong> Text can be dragged like any other shape, and blur and pixelate regions can be picked up by clicking anywhere inside them.</li>
+  <li>New shapes and text stay selected after you draw them. A color or size you pick then applies to that shape and to the next ones you draw.</li>
+  <li>The toolbar wraps onto more rows in a narrow window instead of hiding controls, and selecting a shape no longer makes the image jump. Editor windows can’t be made narrower than their controls.</li>
+  <li>Color and size dim for blur and pixelate, which don’t use them. The size control shows the size in points and goes twice as thick as before, and a color-wheel button opens the full color picker.</li>
+  <li>Two-finger scrolling moves the image around the canvas at any zoom. Click Fit (or press ⌘0) to center it again.</li>
+  <li>Quitting asks before discarding unsaved recordings, and offers to stop (or wait for) a recording in progress. A new thumbnail is never pushed out of the stack.</li>
+  <li>Screenshots leave out Loupe’s recording outline, control bar and pinned images, and the selection overlay closes if you switch apps or Spaces.</li>
+  <li>Crop opens at the aspect ratio you used last, and Return in record mode records the display under the pointer.</li>
+  <li>Opening Loupe again while it’s running shows Settings, and update checks no longer pull Loupe to the front.</li>
+</ul>
+    </section>
+    <section class="release" id="v1.0.4">
+<h2><a href="#v1.0.4">Loupe 1.0.4</a></h2>
+<time datetime="2026-10-11">October 11, 2026</time>
+<ul>
+  <li><strong>No more lost edits.</strong> Closing an editor or quitting Loupe with unsaved changes now asks whether to save them.</li>
+  <li><strong>Recordings are kept when saving fails.</strong> If a recording can't be moved to your save folder or converted to a GIF, Loupe tells you and keeps the original video, instead of deleting it.</li>
+  <li>Unsaved recordings stay in the thumbnail stack until you save or discard them. Closing one asks first.</li>
+  <li>If a recording can't be written (for example, the disk is full), it stops right away and tells you, instead of failing only when you press Stop.</li>
+  <li>If a screenshot can't be auto-saved to your folder, Loupe now says so. It's still in Capture History.</li>
+  <li>Text you're still typing is now included when you save, copy or pin. ⌘Z while typing undoes the typing.</li>
+  <li>Text and numbered steps stay upright after rotating or flipping an image.</li>
+  <li>Saving an opened HEIC, TIFF or WebP image now asks where to save a PNG or JPEG, instead of overwriting the original with the wrong format.</li>
+</ul>
+    </section>
+    <section class="release" id="v1.0.3">
+<h2><a href="#v1.0.3">Loupe 1.0.3</a></h2>
+<time datetime="2026-10-11">October 11, 2026</time>
+<ul>
+  <li><strong>Record Loupe itself.</strong> Screen recordings now include Loupe's own windows (the editor, Settings, pinned screenshots and thumbnails). Only the recording outline and control bar are left out.</li>
+  <li>Fixed: choosing <strong>Save As…</strong> on a recording and keeping the same name could delete the recording. Saving over another file now only replaces it once the copy succeeds.</li>
+  <li>If Loupe doesn't have Screen Recording permission, it now says so, instead of saving black recordings or screenshots that show only the wallpaper.</li>
+  <li>Fixed a dark fringe on rounded corners in exported screenshots with a background.</li>
+</ul>
+    </section>
+    <section class="release" id="v1.0.2">
+<h2><a href="#v1.0.2">Loupe 1.0.2</a></h2>
+<time datetime="2026-10-11">October 11, 2026</time>
+<ul>
+  <li><strong>Clearer styling:</strong> click away from a shape to deselect it. Color and size changes apply only to the selected shape, or to the next one you draw when nothing is selected. The toolbar shows which one it's editing.</li>
+  <li>Switching to crop mode or opening the background panel no longer resizes the editor window, and the editor's bottom bar fits narrow windows.</li>
+</ul>
+    </section>
+    <section class="release" id="v1.0.1">
+<h2><a href="#v1.0.1">Loupe 1.0.1</a></h2>
+<time datetime="2026-10-11">October 11, 2026</time>
+<ul>
+  <li><strong>Screen recording.</strong> Press ⌥⇧8 to record an area, a window or the full screen, then save it as an MP4 or an animated GIF. Recordings start with a 3-second countdown and can include your microphone and computer audio, with clicks highlighted. Stop, restart or discard from the floating control bar, or stop from the menu bar timer.</li>
+  <li>Finished recordings appear as a quick-access thumbnail: copy, save, open, show in Finder, drag into other apps, or save as a GIF.</li>
+  <li><strong>New look:</strong> a blueprint-style app icon, with a matching menu bar icon.</li>
+  <li>10 more background presets.</li>
+</ul>
+    </section>
+    <section class="release" id="v1.0.0">
+<h2><a href="#v1.0.0">Loupe 1.0</a></h2>
+<time datetime="2026-10-10">October 10, 2026</time>
+<p>A fast, native screenshot tool for macOS.</p>
+<ul>
+  <li><strong>Capture</strong> an area, a single window, or the full screen. Adjust a selection before capturing, re-capture the previous area, or use the self-timer.</li>
+  <li><strong>Mark up</strong> with arrows, lines, shapes, text, highlighter, numbered steps, blur and pixelate. Annotations are layers you can select, move, resize and reorder.</li>
+  <li><strong>Backgrounds:</strong> 40 gradients and textures (neutral, light, dark, colorful and textured), solid colors or your own image, with padding, rounded corners and shadows that update instantly.</li>
+  <li><strong>Crop</strong> past the image's edges, and zoom and pan with your trackpad.</li>
+  <li>Adjust exposure, contrast, saturation, hue and more; rotate and flip.</li>
+  <li>Quick-access thumbnail after every capture, capture history, and screenshots pinned above other windows.</li>
+  <li>Custom shortcuts, launch at login, and automatic updates.</li>
+</ul>
+    </section>
+    <section class="release" id="v0.3.0">
+<h2><a href="#v0.3.0">Loupe 0.3.0</a></h2>
+
+<ul>
+  <li><strong>Automatic updates.</strong> Loupe now checks for new versions and installs them for you (Settings → Updates).</li>
+  <li>Capture history, pinned screenshots, self-timer, and capture previous area.</li>
+  <li>Markup tools: arrows, lines, shapes, text, highlighter, counters, blur and pixelate, with live previews and resize handles.</li>
+  <li>Annotations are now layers you can select, move and resize after drawing them.</li>
+  <li>New fold-out loupe icon.</li>
+</ul>
+    </section>
+
+
+    <footer>
+      <nav aria-label="More about Loupe">
+        <a href="/">Home</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/vs/cleanshot">Loupe vs CleanShot X</a>
+        <a href="/vs/shottr">Loupe vs Shottr</a>
+        <a href="/vs/macos-screenshot">Loupe vs macOS Screenshot</a>
+        <a href="https://github.com/bddicken/loupe">GitHub</a>
+      </nav>
+      Loupe 1.0.5 · Free and open source (MIT) · <a href="https://x.com/benjdicken">@benjdicken</a>
+    </footer>
+  </main>
+</body>
+</html>

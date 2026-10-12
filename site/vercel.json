@@ -17,6 +17,12 @@
   ],
   "redirects": [
     {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "loupe-liart.vercel.app" }],
+      "destination": "https://loupe.pics/:path*",
+      "permanent": true
+    },
+    {
       "source": "/download",
       "destination": "{{DOWNLOAD_PATH}}",
       "permanent": false

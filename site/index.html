@@ -3,137 +3,86 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Loupe — Screenshots for Mac</title>
-  <meta name="description" content="Loupe is a fast, native screenshot tool for macOS: capture, edit, and polish screenshots in seconds.">
+  <title>Loupe — Free, Open-Source Screenshot &amp; Screen Recorder for Mac</title>
+  <meta name="description" content="Loupe is a free, open-source screenshot and screen recording app for Mac. Capture, annotate, blur, add backgrounds, and record MP4 or GIF.">
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="canonical" href="https://loupe.pics/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://loupe.pics/">
   <meta property="og:site_name" content="Loupe">
-  <meta property="og:title" content="Loupe — Screenshots for Mac">
-  <meta property="og:description" content="Capture, edit, and polish screenshots in seconds.">
+  <meta property="og:title" content="Loupe — Free Screenshot &amp; Screen Recorder for Mac">
+  <meta property="og:description" content="A free, open-source screenshot and screen recording app for Mac. Capture, mark up, polish and record in seconds.">
   <meta property="og:image" content="https://loupe.pics/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Loupe app icon, a fold-out pocket magnifier, next to the word Loupe">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Loupe — Screenshots for Mac">
-  <meta name="twitter:description" content="Capture, edit, and polish screenshots in seconds.">
+  <meta name="twitter:title" content="Loupe — Free Screenshot &amp; Screen Recorder for Mac">
+  <meta name="twitter:description" content="A free, open-source screenshot and screen recording app for Mac. Capture, mark up, polish and record in seconds.">
   <meta name="twitter:image" content="https://loupe.pics/og-image.png">
-  <style>
-    :root {
-      --bg: #fbfbfd;
-      --surface: #ffffff;
-      --text: #1d1d1f;
-      --muted: #6e6e73;
-      --line: #e5e5ea;
-      --accent: #1d1d1f;
-      --accent-hover: #000000;
-      --accent-text: #ffffff;
-      --link: #0066cc;
-      --kbd-bg: #f2f2f7;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0e0e12;
-        --surface: #17171d;
-        --text: #f5f5f7;
-        --muted: #a1a1aa;
-        --line: #2a2a33;
-        --accent: #f5f5f7;
-        --accent-hover: #ffffff;
-        --accent-text: #1d1d1f;
-        --link: #6cb4ff;
-        --kbd-bg: #23232b;
+  <link rel="stylesheet" href="style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://loupe.pics/#app",
+        "name": "Loupe",
+        "alternateName": "Loupe screenshot app",
+        "description": "A free, open-source screenshot and screen recording app for Mac. Capture an area, a window or the full screen, mark it up, add a background, and record the screen to MP4 or GIF.",
+        "url": "https://loupe.pics/",
+        "image": "https://loupe.pics/og-image.png",
+        "screenshot": "https://loupe.pics/editor.png",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "macOS 14 or later",
+        "processorRequirements": "Apple Silicon or Intel",
+        "softwareVersion": "{{VERSION}}",
+        "downloadUrl": "{{DOWNLOAD_URL}}",
+        "releaseNotes": "https://loupe.pics/changelog",
+        "license": "https://opensource.org/license/mit",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Ben Dicken", "url": "https://x.com/benjdicken" },
+        "sameAs": ["https://github.com/bddicken/loupe"]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          { "@type": "Question", "name": "Is Loupe free?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Loupe is free and open source under the MIT license, with no account, subscription or watermark." } },
+          { "@type": "Question", "name": "Which Macs does Loupe run on?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Loupe needs macOS 14 Sonoma or later and runs natively on both Apple Silicon and Intel Macs." } },
+          { "@type": "Question", "name": "Can Loupe record my screen?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Press ⌥⇧8 to record an area, a window or the full screen, and save it as an MP4 video or an animated GIF. Recordings can include your microphone and computer audio, with clicks highlighted." } },
+          { "@type": "Question", "name": "Does Loupe replace the built-in macOS screenshot shortcuts?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. Loupe uses ⌥⇧ shortcuts by default, so the built-in ⌘⇧3, ⌘⇧4 and ⌘⇧5 keep working. You can change every Loupe shortcut in Settings." } },
+          { "@type": "Question", "name": "Does Loupe upload my screenshots?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. Screenshots and recordings stay on your Mac. The only thing Loupe fetches from the internet is the update feed at loupe.pics." } },
+          { "@type": "Question", "name": "Is Loupe an alternative to CleanShot X?",
+            "acceptedAnswer": { "@type": "Answer", "text": "For capturing, annotating, adding backgrounds and recording MP4 or GIF, yes, and it is free. CleanShot X adds scrolling capture, text recognition (OCR) and cloud sharing, which Loupe doesn't have." } }
+        ]
       }
-    }
-    * { box-sizing: border-box; }
-    html { -webkit-text-size-adjust: 100%; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
-    }
-    main { max-width: 760px; margin: 0 auto; padding: 0 20px; }
-    a { color: var(--link); }
-
-    .hero { text-align: center; padding: 88px 0 56px; }
-    .hero img { width: 148px; height: 148px; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .22)); }
-    h1 { font-size: 48px; line-height: 1.1; letter-spacing: -0.02em; margin: 20px 0 10px; font-weight: 700; }
-    .tagline { font-size: 20px; color: var(--muted); margin: 0 auto 32px; max-width: 30em; }
-
-    .download {
-      display: inline-flex; align-items: center; gap: 10px;
-      background: var(--accent); color: var(--accent-text); text-decoration: none;
-      font-weight: 600; font-size: 17px;
-      padding: 14px 26px; border-radius: 999px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
-      transition: background .15s, transform .15s;
-    }
-    .download:hover { background: var(--accent-hover); transform: translateY(-1px); }
-    .download svg { width: 18px; height: 18px; }
-    .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
-    .source { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 14px; color: var(--muted); text-decoration: none; }
-    .source:hover { color: var(--text); }
-    .source svg { width: 15px; height: 15px; }
-    .links { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 20px; }
-
-    .shot { display: block; width: min(1040px, calc(100vw - 32px)); height: auto; margin: 0 0 32px 50%; transform: translateX(-50%); }
-    section { padding: 40px 0; border-top: 1px solid var(--line); }
-    h2 { font-size: 22px; letter-spacing: -0.01em; margin: 0 0 20px; }
-
-    .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 32px; margin: 0; padding: 0; list-style: none; }
-    .features h3 { font-size: 16px; margin: 0 0 4px; }
-    .features p { margin: 0; color: var(--muted); font-size: 15px; }
-
-    table { width: 100%; border-collapse: collapse; font-size: 15px; }
-    td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-    tr:last-child td { border-bottom: 0; }
-    td:first-child { width: 120px; white-space: nowrap; }
-    kbd {
-      font: 13px/1 ui-monospace, "SF Mono", Menlo, monospace;
-      background: var(--kbd-bg); border: 1px solid var(--line); border-bottom-width: 2px;
-      border-radius: 6px; padding: 4px 7px;
-    }
-    .note { color: var(--muted); font-size: 14px; margin-top: 14px; }
-
-    ol { padding-left: 20px; margin: 0; }
-    ol li { margin-bottom: 10px; }
-    details { margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
-    summary { cursor: pointer; font-weight: 600; }
-    details p, details ul { color: var(--muted); font-size: 15px; }
-    code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; background: var(--kbd-bg); padding: 2px 6px; border-radius: 5px; word-break: break-all; }
-
-    footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 13px; text-align: center; }
-
-    @media (max-width: 600px) {
-      .hero { padding: 56px 0 40px; }
-      .hero img { width: 112px; height: 112px; }
-      h1 { font-size: 38px; }
-      .tagline { font-size: 18px; }
-      .features { grid-template-columns: 1fr; }
-      td:first-child { width: 96px; }
-    }
-  </style>
+    ]
+  }
+  </script>
 </head>
 <body>
   <main>
     <header class="hero">
-      <img src="icon.png" alt="Loupe app icon: a fold-out pocket magnifier">
+      <img src="icon.png" width="148" height="148" alt="Loupe screenshot app icon: a fold-out pocket magnifier">
       <h1>Loupe</h1>
-      <p class="tagline">A fast, native screenshot tool for macOS. Capture, edit, and polish screenshots in seconds.</p>
+      <p class="tagline">A free, open-source screenshot and screen recording app for Mac. Capture, mark up, polish and record in seconds.</p>
       <a class="download" href="{{DOWNLOAD_URL}}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
         Download for Mac
       </a>
-      <div class="meta">Version {{VERSION}} · Apple Silicon &amp; Intel</div>
+      <div class="meta">Free · Version {{VERSION}} · macOS 14+ · Apple Silicon &amp; Intel</div>
       <div class="links">
         <a class="source" href="https://github.com/bddicken/loupe">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        View the source on GitHub
+        Open source on GitHub
       </a>
         <a class="source" href="https://x.com/benjdicken">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
@@ -142,29 +91,35 @@
       </div>
     </header>
 
-    <img class="shot" src="editor.png" width="1800" height="1249"
-         alt="The Loupe editor: a mountain lake at dusk marked up with an arrow, text, numbered steps and a circle, on a dusk gradient background">
+    <picture>
+      <source srcset="editor.webp" type="image/webp">
+      <img class="shot" src="editor.png" width="1800" height="1249" fetchpriority="high"
+           alt="The Loupe screenshot editor on Mac: a screenshot annotated with an arrow, text, numbered steps and a circle, on a gradient background, with crop, adjustment and background controls">
+    </picture>
 
     <section>
-      <h2>Features</h2>
+      <h2>Screenshot and screen recording features</h2>
       <ul class="features">
         <li><h3>Area, window &amp; fullscreen</h3><p>Drag to capture, click a window to grab just that window, or adjust the selection before you shoot.</p></li>
+        <li><h3>Screen recording to MP4 or GIF</h3><p>Record an area, a window or the full screen, with a countdown, highlighted clicks, and microphone and computer audio.</p></li>
         <li><h3>Markup</h3><p>Arrows, lines, shapes, text, highlighter, numbered steps, plus blur and pixelate for anything sensitive.</p></li>
-        <li><h3>Beautiful backgrounds</h3><p>Gradients, padding, rounded corners and soft shadows, ready to share.</p></li>
+        <li><h3>Beautiful backgrounds</h3><p>Gradients, solid colors or your own image, with padding, rounded corners and soft shadows, ready to share.</p></li>
         <li><h3>Edit &amp; adjust</h3><p>Crop with aspect presets, rotate, and tune exposure, contrast, saturation and hue.</p></li>
-        <li><h3>Quick access</h3><p>A thumbnail after every capture: copy, save, edit, or drag straight into another app.</p></li>
+        <li><h3>Quick access</h3><p>A thumbnail after every capture or recording: copy, save, edit, or drag straight into another app.</p></li>
         <li><h3>History, pins &amp; timer</h3><p>Browse recent captures, pin screenshots above other windows, and use a self-timer for menus.</p></li>
+        <li><h3>Free, native &amp; private</h3><p>Open source, built in Swift for macOS, with no account, no subscription, and nothing uploaded.</p></li>
       </ul>
     </section>
 
     <section>
-      <h2>Shortcuts</h2>
-      <table>
+      <h2>Keyboard shortcuts</h2>
+      <table class="shortcuts">
         <tr><td><kbd>⌥⇧4</kbd></td><td>Capture an area (or click a window)</td></tr>
         <tr><td><kbd>⌥⇧5</kbd></td><td>Capture an area, adjusting it before capturing</td></tr>
         <tr><td><kbd>⌥⇧3</kbd></td><td>Capture the full screen</td></tr>
         <tr><td><kbd>⌥⇧6</kbd></td><td>Capture the previous area again</td></tr>
         <tr><td><kbd>⌥⇧7</kbd></td><td>Capture with a self-timer</td></tr>
+        <tr><td><kbd>⌥⇧8</kbd></td><td>Record the screen (press again to stop)</td></tr>
       </table>
       <p class="note">Every shortcut can be changed in Loupe’s Settings.</p>
     </section>
@@ -187,9 +142,23 @@
       </details>
     </section>
 
-    <footer>
-      Loupe {{VERSION}} · <a href="https://github.com/bddicken/loupe">GitHub</a> · <a href="https://x.com/benjdicken">@benjdicken</a>
-    </footer>
+    <section class="faq">
+      <h2>Questions</h2>
+      <h3>Is Loupe free?</h3>
+      <p>Yes. Loupe is free and open source under the MIT license, with no account, subscription or watermark.</p>
+      <h3>Which Macs does Loupe run on?</h3>
+      <p>Loupe needs macOS 14 Sonoma or later and runs natively on both Apple Silicon and Intel Macs.</p>
+      <h3>Can Loupe record my screen?</h3>
+      <p>Yes. Press <kbd>⌥⇧8</kbd> to record an area, a window or the full screen, and save it as an MP4 video or an animated GIF. Recordings can include your microphone and computer audio, with clicks highlighted.</p>
+      <h3>Does Loupe replace the built-in macOS screenshot shortcuts?</h3>
+      <p>No. Loupe uses <kbd>⌥⇧</kbd> shortcuts by default, so the built-in <kbd>⌘⇧3</kbd>, <kbd>⌘⇧4</kbd> and <kbd>⌘⇧5</kbd> keep working. You can change every Loupe shortcut in Settings. <a href="/vs/macos-screenshot">How Loupe compares to the macOS Screenshot app</a>.</p>
+      <h3>Does Loupe upload my screenshots?</h3>
+      <p>No. Screenshots and recordings stay on your Mac. The only thing Loupe fetches from the internet is the update feed at loupe.pics.</p>
+      <h3>Is Loupe an alternative to CleanShot X?</h3>
+      <p>For capturing, annotating, adding backgrounds and recording MP4 or GIF, yes, and it is free. CleanShot X adds scrolling capture, text recognition (OCR) and cloud sharing, which Loupe doesn't have. <a href="/vs/cleanshot">Compare Loupe and CleanShot X</a>.</p>
+    </section>
+
+{{FOOTER}}
   </main>
 </body>
 </html>
