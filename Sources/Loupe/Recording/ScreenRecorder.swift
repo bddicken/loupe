@@ -16,7 +16,7 @@ struct RecordingConfiguration {
 }
 
 /// Streams a display region with ScreenCaptureKit (plus an optional
-/// microphone) into an H.264 MP4. All sample handling happens on one serial queue.
+/// microphone) into an H.264 QuickTime movie. All sample handling happens on one serial queue.
 final class ScreenRecorder: NSObject, @unchecked Sendable {
     let outputURL: URL
     private let configuration: RecordingConfiguration
@@ -196,8 +196,11 @@ private final class RecordingWriter {
     }
 
     init(url: URL, pixelSize: CGSize, framesPerSecond: Int, systemAudio: Bool, microphone: Bool) throws {
-        writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        writer.shouldOptimizeForNetworkUse = true
+        writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        // Written in fragments, so a crash or force-quit leaves a movie that plays up to
+        // the last couple of seconds (recovered on the next launch) instead of an
+        // unreadable file. It's converted to MP4 once finished.
+        writer.movieFragmentInterval = CMTime(seconds: 2, preferredTimescale: 600)
 
         let pixels = pixelSize.width * pixelSize.height
         let bitRate = min(max(pixels * Double(framesPerSecond) * 0.12, 2_000_000), 40_000_000)

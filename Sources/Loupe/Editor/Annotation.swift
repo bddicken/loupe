@@ -1,7 +1,7 @@
 import AppKit
 
 enum AnnotationTool: String, CaseIterable, Identifiable {
-    case select, arrow, line, rectangle, ellipse, pen, highlighter, text, step, blur, pixelate
+    case select, arrow, line, rectangle, ellipse, pen, highlighter, text, step, blur, pixelate, redact
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .step: "Counter"
         case .blur: "Blur"
         case .pixelate: "Pixelate"
+        case .redact: "Redact"
         }
     }
 
@@ -34,6 +35,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .step: "1.circle"
         case .blur: "drop.halffull"
         case .pixelate: "squareshape.split.3x3"
+        case .redact: "rectangle.fill"
         }
     }
 
@@ -51,6 +53,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .step: "n"
         case .blur: "b"
         case .pixelate: "x"
+        case .redact: "d"
         }
     }
 
@@ -67,6 +70,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .step: .step
         case .blur: .blur
         case .pixelate: .pixelate
+        case .redact: .redact
         }
     }
 }
@@ -77,11 +81,16 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
 struct Annotation: Identifiable, Equatable {
     enum Kind: Equatable {
         case arrow, line, rectangle, ellipse, pen, highlighter, text, step, blur, pixelate
+        /// A solid, opaque box: unlike blur and pixelate, nothing underneath can be recovered.
+        case redact
 
         var isRegionEffect: Bool { self == .blur || self == .pixelate }
         var isFreehand: Bool { self == .pen || self == .highlighter }
-        var isBoxed: Bool { self == .rectangle || self == .ellipse || isRegionEffect }
+        var isBoxed: Bool { self == .rectangle || self == .ellipse || self == .redact || isRegionEffect }
     }
+
+    /// Blur and pixelate strength, from weak to strong.
+    static let strengthRange: ClosedRange<Double> = 1...10
 
     var id = UUID()
     var kind: Kind
@@ -95,6 +104,8 @@ struct Annotation: Identifiable, Equatable {
     /// Text only: the width (source pixels, upright) it wraps at, or nil to grow with its longest line.
     var textWidth: CGFloat?
     var number = 0
+    /// Blur and pixelate only: how strong the effect is (in `strengthRange`).
+    var strength = 4.0
 
     var start: CGPoint { points.first ?? .zero }
     var end: CGPoint { points.last ?? .zero }
@@ -196,6 +207,10 @@ enum AnnotationRenderer {
         case .step:
             context.concatenate(upright(about: annotation.start, orientation))
             drawStep(annotation, in: context)
+        case .redact:
+            // Always opaque, whatever color was picked.
+            context.setFillColor(annotation.color.cgColor.copy(alpha: 1) ?? color)
+            context.fill(annotation.rect)
         case .blur, .pixelate:
             break // Rendered by Core Image (they need the pixels underneath).
         }
@@ -325,7 +340,7 @@ enum AnnotationRenderer {
         case .step:
             let r = stepRadius(annotation)
             return CGRect(x: annotation.start.x - r, y: annotation.start.y - r, width: r * 2, height: r * 2)
-        case .blur, .pixelate:
+        case .blur, .pixelate, .redact:
             return annotation.rect
         case .arrow:
             return arrowPath(annotation).boundingBox
@@ -338,15 +353,15 @@ enum AnnotationRenderer {
         }
     }
 
-    /// `tolerance` is in source pixels. Text, counters and blur/pixelate regions are
-    /// solid, so a click anywhere on them counts. With `interior`, clicking inside a
+    /// `tolerance` is in source pixels. Text, counters, redactions and blur/pixelate
+    /// regions are solid, so a click anywhere on them counts. With `interior`, clicking inside a
     /// hollow box counts too; otherwise only its outline does.
     static func hitTest(
         _ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false,
         orientation: CGAffineTransform = .identity
     ) -> Bool {
         let kind = annotation.kind
-        if kind == .text || kind == .step || kind.isRegionEffect || (interior && kind.isBoxed) {
+        if kind == .text || kind == .step || kind == .redact || kind.isRegionEffect || (interior && kind.isBoxed) {
             return bounds(annotation, orientation: orientation).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         }
         guard let path = outlinePath(annotation) else { return false }

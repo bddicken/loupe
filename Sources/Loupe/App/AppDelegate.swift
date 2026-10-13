@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.updateStatusItemForRecording() }
         }
 
+        RecordingRecovery.recoverUnfinished()
+
         // `Loupe --edit <image>…` opens images straight in the editor (handy for development).
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--edit") {

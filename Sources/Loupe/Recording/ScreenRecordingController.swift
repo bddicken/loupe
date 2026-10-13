@@ -99,8 +99,13 @@ final class ScreenRecordingController {
                 let duration = try await recorder.stop()
                 await finish(movie: recorder.outputURL, duration: duration)
             } catch {
-                // The movie couldn't be finalized, so there's nothing playable to keep.
-                try? FileManager.default.removeItem(at: recorder.outputURL)
+                // The movie couldn't be finalized (e.g. the disk filled up), but it's written
+                // in fragments: keep whatever plays.
+                if let duration = await RecordingExport.playableDuration(of: recorder.outputURL) {
+                    await finish(movie: recorder.outputURL, duration: duration)
+                } else {
+                    try? FileManager.default.removeItem(at: recorder.outputURL)
+                }
                 CaptureController.shared.showCaptureError(error, title: "Couldn’t save the recording")
             }
             reset()
@@ -154,7 +159,11 @@ final class ScreenRecordingController {
     /// Asks before quitting mid-recording, which would lose it. False cancels the quit.
     func confirmQuit() -> Bool {
         switch state {
-        case .idle, .countingDown, .starting:
+        case .idle, .countingDown:
+            return true
+        case .starting:
+            // Not recording yet: don't leave a movie behind to recover on the next launch.
+            if let startingRecorder { try? FileManager.default.removeItem(at: startingRecorder.outputURL) }
             return true
         case .recording:
             NSApp.activate(ignoringOtherApps: true)
@@ -169,6 +178,8 @@ final class ScreenRecordingController {
                 stop()
                 return false
             case .alertThirdButtonReturn:
+                // Otherwise it would be recovered on the next launch.
+                if let recorder { try? FileManager.default.removeItem(at: recorder.outputURL) }
                 return true
             default:
                 return false
@@ -177,7 +188,7 @@ final class ScreenRecordingController {
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = "Loupe is still saving a recording."
-            alert.informativeText = "Quitting now will lose it. Wait a moment, then quit again."
+            alert.informativeText = "Wait a moment, then quit again. If you quit now, Loupe will recover what it can the next time it opens."
             alert.addButton(withTitle: "Wait")
             alert.addButton(withTitle: "Quit Anyway").hasDestructiveAction = true
             return alert.runModal() == .alertSecondButtonReturn
@@ -252,9 +263,7 @@ final class ScreenRecordingController {
 
     private func startRecorder(screen: NSScreen, area: CaptureArea, overlay: RecordingOverlay) async throws {
         let configuration = try await makeConfiguration(screen: screen, area: area, overlay: overlay)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Loupe", isDirectory: true)
-            .appendingPathComponent("Recording-\(UUID().uuidString).mp4")
+        let url = RecordingExport.unfinishedDirectory.appendingPathComponent("Recording-\(UUID().uuidString).mov")
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         let recorder = try ScreenRecorder(configuration: configuration, outputURL: url)
@@ -313,7 +322,7 @@ final class ScreenRecordingController {
         )
     }
 
-    /// Moves the finished movie into place (converting to GIF if asked) and shows it.
+    /// Converts the finished movie to MP4 (or GIF) in its place and shows it.
     /// If that fails, the recording is still shown from its temporary file rather than lost.
     private func finish(movie: URL, duration: Double) async {
         let format = Preferences.recordingFormat
@@ -332,12 +341,12 @@ final class ScreenRecordingController {
             }
             if format == .gif {
                 try await GIFExporter.export(movie: movie, to: destination)
-                try? FileManager.default.removeItem(at: movie)
             } else {
-                try FileManager.default.moveItem(at: movie, to: destination)
+                try await RecordingExport.convertToMP4(movie, to: destination)
             }
+            try? FileManager.default.removeItem(at: movie)
         } catch {
-            try? FileManager.default.removeItem(at: destination) // A partly written GIF.
+            try? FileManager.default.removeItem(at: destination) // A partly written file.
             destination = movie
             isTemporary = true
             CaptureController.shared.showCaptureError(
@@ -413,6 +422,39 @@ enum RecordingFormat: String, CaseIterable, Identifiable {
 }
 
 enum RecordingExport {
+    /// Where movies are written while recording. Not the temporary folder, which macOS
+    /// clears, so a recording interrupted by a crash is still there on the next launch.
+    static let unfinishedDirectory: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Loupe/Unfinished Recordings", isDirectory: true)
+    }()
+
+    /// Rewraps a recorded movie as an MP4 without re-encoding, laid out for streaming.
+    static func convertToMP4(_ movie: URL, to destination: URL) async throws {
+        guard let session = AVAssetExportSession(asset: AVURLAsset(url: movie), presetName: AVAssetExportPresetPassthrough) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        session.shouldOptimizeForNetworkUse = true
+        if #available(macOS 15, *) {
+            try await session.export(to: destination, as: .mp4)
+        } else {
+            session.outputURL = destination
+            session.outputFileType = .mp4
+            await session.export()
+            guard session.status == .completed else {
+                throw session.error ?? CocoaError(.fileWriteUnknown)
+            }
+        }
+    }
+
+    /// The length of a movie that has at least one playable frame, or nil.
+    static func playableDuration(of movie: URL) async -> Double? {
+        let asset = AVURLAsset(url: movie)
+        guard let (isPlayable, duration) = try? await asset.load(.isPlayable, .duration),
+              isPlayable, duration.seconds > 0 else { return nil }
+        return duration.seconds
+    }
+
     static func defaultFileName(for date: Date, format: RecordingFormat) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
