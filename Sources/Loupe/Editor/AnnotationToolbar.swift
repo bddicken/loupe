@@ -14,7 +14,11 @@ struct AnnotationToolbar: View, Equatable {
         var color: RGBAColor
         var size: Double
         var sizeLabel: String
-        var styleApplies: Bool
+        var sizeRange: ClosedRange<Double>
+        /// Set while the slider is a blur or pixelate strength rather than a size.
+        var strengthOf: Annotation.Kind?
+        var colorApplies: Bool
+        var sizeApplies: Bool
         var isCropping: Bool
     }
 
@@ -26,7 +30,10 @@ struct AnnotationToolbar: View, Equatable {
             color: model.toolbarColor,
             size: model.toolbarSize,
             sizeLabel: model.toolbarSizeLabel,
-            styleApplies: model.toolbarStyleApplies,
+            sizeRange: model.toolbarSizeRange,
+            strengthOf: model.styleTargetKind?.isRegionEffect == true ? model.styleTargetKind : nil,
+            colorApplies: model.toolbarColorApplies,
+            sizeApplies: model.toolbarSizeApplies,
             isCropping: model.isCropping
         )
     }
@@ -53,10 +60,10 @@ struct AnnotationToolbar: View, Equatable {
             }
             ToolbarSeparator()
             styleLabel
-                .modifier(StyleAvailability(applies: values.styleApplies))
+                .modifier(StyleAvailability(applies: values.colorApplies || values.sizeApplies))
             ForEach(Self.palette, id: \.self) { color in
                 swatch(color)
-                    .modifier(StyleAvailability(applies: values.styleApplies))
+                    .modifier(StyleAvailability(applies: values.colorApplies))
             }
             CustomColorButton(
                 color: values.color,
@@ -64,7 +71,7 @@ struct AnnotationToolbar: View, Equatable {
                 open: openColorPanel
             )
             .padding(.leading, 2)
-            .modifier(StyleAvailability(applies: values.styleApplies))
+            .modifier(StyleAvailability(applies: values.colorApplies))
             ToolbarSeparator()
             sizeControl
             ToolbarSeparator()
@@ -108,9 +115,13 @@ struct AnnotationToolbar: View, Equatable {
         .help("\(tool.title) (\(String(tool.key).uppercased()))")
     }
 
-    /// Blur and pixelate have no color or size, so those controls dim for them.
+    /// Blur and pixelate have no color, and redactions no size, so those controls dim for them.
     private var styleHelp: String {
-        if !values.styleApplies { return "Blur and pixelate have no color or size" }
+        if values.strengthOf != nil {
+            return !values.hasSelection
+                ? "Strength applies to the next region you draw"
+                : "Strength applies to the selected region and the next ones you draw"
+        }
         return !values.hasSelection
             ? "Color and size apply to the next shape you draw"
             : "Color and size apply to the selected shape and the next ones you draw"
@@ -147,9 +158,10 @@ struct AnnotationToolbar: View, Equatable {
 
     private var sizeControl: some View {
         HStack(spacing: 6) {
-            Image(systemName: "lineweight")
+            Image(systemName: values.strengthOf == .pixelate ? "squareshape.split.3x3" : values.strengthOf == .blur ? "drop.halffull" : "lineweight")
                 .foregroundStyle(.secondary)
-            Slider(value: size, in: EditorModel.annotationSizeRange) { editing in
+                .frame(width: 16)
+            Slider(value: size, in: values.sizeRange) { editing in
                 if editing, model.selectedAnnotationID != nil { model.checkpoint() }
             }
             .controlSize(.small)
@@ -159,8 +171,8 @@ struct AnnotationToolbar: View, Equatable {
                 .foregroundStyle(.secondary)
                 .frame(width: 36, alignment: .leading)
         }
-        .help(values.styleApplies ? "Size" : styleHelp)
-        .modifier(StyleAvailability(applies: values.styleApplies))
+        .help(!values.sizeApplies ? "Redactions are solid boxes, with no size" : values.strengthOf != nil ? "Strength" : "Size")
+        .modifier(StyleAvailability(applies: values.sizeApplies))
     }
 
     /// Opens the system color panel. Its continuous changes to one layer (or to the
@@ -168,7 +180,7 @@ struct AnnotationToolbar: View, Equatable {
     private func openColorPanel() {
         var undoTarget: UUID?? = nil // The layer the current undo step covers.
         CustomColorPanel.shared.open(color: model.toolbarColor) { [weak model] color in
-            guard let model, model.toolbarStyleApplies else { return }
+            guard let model, model.toolbarColorApplies else { return }
             let target = model.selectedAnnotationID
             let isNewStep = undoTarget != .some(target)
             undoTarget = .some(target)
@@ -185,7 +197,8 @@ struct AnnotationToolbar: View, Equatable {
     }
 }
 
-/// Dims and disables a color or size control while it doesn't apply (blur and pixelate).
+/// Dims and disables a color or size control while it doesn't apply (color for blur and
+/// pixelate, size for redactions).
 private struct StyleAvailability: ViewModifier {
     let applies: Bool
 

@@ -954,10 +954,11 @@ private final class CanvasGestureView: NSView {
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Clicking the empty canvas around the image deselects the selected layer.
+    /// Clicking the empty canvas around the image deselects the selected layer, and
+    /// keeps the keyboard on the annotation canvas (not on nothing) so shortcuts still work.
     override func mouseDown(with event: NSEvent) {
         MainActor.assumeIsolated {
-            window?.makeFirstResponder(nil)
+            model.focusCanvas?()
             model.selectedAnnotationID = nil
         }
     }

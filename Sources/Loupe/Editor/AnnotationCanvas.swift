@@ -62,6 +62,11 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         super.init(frame: .zero)
         MainActor.assumeIsolated {
             model.commitTextEditing = { [weak self] in self?.endTextEditing() }
+            model.focusCanvas = { [weak self] in
+                guard let self else { return }
+                self.endTextEditing()
+                self.window?.makeFirstResponder(self)
+            }
         }
     }
 
@@ -164,7 +169,7 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         switch annotation.kind {
         case .arrow, .line:
             return [(.endpoint(0), annotation.start), (.endpoint(1), annotation.end)]
-        case .rectangle, .ellipse, .blur, .pixelate:
+        case .rectangle, .ellipse, .blur, .pixelate, .redact:
             let r = annotation.rect
             return [
                 (.corner(0), CGPoint(x: r.minX, y: r.minY)),

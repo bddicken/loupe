@@ -148,6 +148,11 @@ final class EditorModel: ObservableObject {
     @Published private(set) var annotationSize: Double = 4
     /// The toolbar's size slider: stroke width in points.
     static let annotationSizeRange: ClosedRange<Double> = 1...24
+    /// Strength of the next blur or pixelate; the size slider sets it for those tools.
+    @Published private(set) var effectStrength: Double = 4
+    /// Color of the next redaction. Its own (black to start), so redacting doesn't
+    /// take the red picked for arrows, nor change it.
+    @Published private(set) var redactColor = RGBAColor(hex: 0x000000)
     /// The selected layer, if any. While one is selected, the toolbar shows its style,
     /// and a style picked there applies to it as well as to the next annotation.
     @Published var selectedAnnotationID: UUID?
@@ -159,6 +164,9 @@ final class EditorModel: ObservableObject {
     /// Commits a text annotation that's still being typed (set by the canvas),
     /// so saving, copying or closing never leaves it out.
     var commitTextEditing: (() -> Void)?
+    /// Finishes any typing and gives the annotation canvas keyboard focus (set by the
+    /// canvas), so tool keys, Delete and the arrow keys reach it.
+    var focusCanvas: (() -> Void)?
 
     private var undoStack: [EditState] = []
     private var redoStack: [EditState] = []
@@ -734,6 +742,8 @@ final class EditorModel: ObservableObject {
         let extent = input.extent
         var image = input
 
+        // Strength 4 (the default) is a 12pt blur radius or 10pt blocks; even the weakest
+        // still hides body text.
         for annotation in annotations where annotation.kind.isRegionEffect {
             let r = annotation.rect
             let region = CGRect(
@@ -747,10 +757,10 @@ final class EditorModel: ObservableObject {
             let effect: CIImage
             if annotation.kind == .blur {
                 effect = image.clampedToExtent()
-                    .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 12 * pixelsPerPoint])
+                    .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: (4 + 2 * annotation.strength) * pixelsPerPoint])
             } else {
                 effect = image.clampedToExtent().applyingFilter("CIPixellate", parameters: [
-                    kCIInputScaleKey: max(4, 10 * pixelsPerPoint),
+                    kCIInputScaleKey: max(4, (4 + 1.5 * annotation.strength) * pixelsPerPoint),
                     kCIInputCenterKey: CIVector(x: region.minX, y: region.minY),
                 ])
             }
@@ -766,9 +776,10 @@ final class EditorModel: ObservableObject {
         var annotation = Annotation(
             kind: kind,
             points: points,
-            color: annotationColor,
+            color: kind == .redact ? redactColor : annotationColor,
             strokeWidth: annotationSize * pixelsPerPoint,
-            fontSize: (10 + annotationSize * 4) * pixelsPerPoint
+            fontSize: (10 + annotationSize * 4) * pixelsPerPoint,
+            strength: effectStrength
         )
         if kind == .step {
             annotation.number = (state.annotations.filter { $0.kind == .step }.map(\.number).max() ?? 0) + 1
@@ -833,10 +844,14 @@ final class EditorModel: ObservableObject {
     }
 
     /// The color the toolbar shows: the selected layer's, or the next annotation's.
-    var toolbarColor: RGBAColor { selectedAnnotation?.color ?? annotationColor }
+    var toolbarColor: RGBAColor {
+        selectedAnnotation?.color ?? (tool.kind == .redact ? redactColor : annotationColor)
+    }
 
     /// The size the toolbar shows: the selected layer's, or the next annotation's.
+    /// For blur and pixelate, their strength.
     var toolbarSize: Double {
+        if styleTargetKind?.isRegionEffect == true { return selectedAnnotation?.strength ?? effectStrength }
         guard let selected = selectedAnnotation else { return annotationSize }
         let pixelsPerPoint = screenshot.scale
         let range = Self.annotationSizeRange
@@ -850,13 +865,23 @@ final class EditorModel: ObservableObject {
     /// current tool's (nil for the select tool with nothing selected).
     var styleTargetKind: Annotation.Kind? { selectedAnnotation?.kind ?? tool.kind }
 
-    /// False for blur and pixelate, which have no color or size.
-    var toolbarStyleApplies: Bool { styleTargetKind?.isRegionEffect != true }
+    /// False for blur and pixelate, which have no color.
+    var toolbarColorApplies: Bool { styleTargetKind?.isRegionEffect != true }
+
+    /// False for redactions, which are solid boxes.
+    var toolbarSizeApplies: Bool { styleTargetKind != .redact }
+
+    /// The size slider's range: strength for blur and pixelate, points otherwise.
+    var toolbarSizeRange: ClosedRange<Double> {
+        styleTargetKind?.isRegionEffect == true ? Annotation.strengthRange : Self.annotationSizeRange
+    }
 
     /// The size as drawn, in points: font size for text and counters, the band's
-    /// width for the highlighter, otherwise the stroke width.
+    /// width for the highlighter, otherwise the stroke width. For blur and pixelate,
+    /// their strength.
     var toolbarSizeLabel: String {
-        guard toolbarStyleApplies else { return "–" }
+        guard toolbarSizeApplies else { return "–" }
+        if styleTargetKind?.isRegionEffect == true { return "\(Int(toolbarSize.rounded()))" }
         let pixelsPerPoint = screenshot.scale
         let points: Double
         if let selected = selectedAnnotation {
@@ -878,14 +903,26 @@ final class EditorModel: ObservableObject {
     /// Sets the color for the next annotation, and recolors the selected layer, if any
     /// (like Preview: picking a color right after drawing changes that shape and the next).
     func setAnnotationColor(_ color: RGBAColor, checkpoint shouldCheckpoint: Bool = true) {
-        annotationColor = color
+        if styleTargetKind == .redact {
+            redactColor = color
+        } else {
+            annotationColor = color
+        }
         if let id = selectedAnnotationID {
             updateAnnotation(id, checkpoint: shouldCheckpoint) { $0.color = color }
         }
     }
 
     /// Sets the size for the next annotation, and resizes the selected layer, if any.
+    /// For blur and pixelate, sets their strength instead.
     func setAnnotationSize(_ size: Double, checkpoint shouldCheckpoint: Bool) {
+        if styleTargetKind?.isRegionEffect == true {
+            effectStrength = size
+            if let id = selectedAnnotationID {
+                updateAnnotation(id, checkpoint: shouldCheckpoint) { $0.strength = size }
+            }
+            return
+        }
         annotationSize = size
         if let id = selectedAnnotationID {
             let pixelsPerPoint = screenshot.scale
