@@ -4,28 +4,21 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.5</title>
-      <pubDate>Mon, 12 Oct 2026 16:13:23 +0000</pubDate>
-      <sparkle:version>66</sparkle:version>
-      <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+      <title>Loupe 1.0.6</title>
+      <pubDate>Tue, 13 Oct 2026 21:34:24 +0000</pubDate>
+      <sparkle:version>73</sparkle:version>
+      <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.5</h2>
+<h2>Loupe 1.0.6</h2>
 <ul>
-  <li><strong>Edits preview instantly.</strong> Dragging Exposure, Brightness and the other adjustments, background sliders, crop handles or blur regions now updates the image as you drag, instead of lagging behind or jumping once you let go. The preview renders on the GPU at the size it’s shown.</li>
-  <li><strong>Better text.</strong> Everything you type stays visible while you type it. Drag with the Text tool to make a text box that wraps at its width, and drag a text’s left or right edge to change where it wraps. Return starts a new line; Esc or clicking elsewhere finishes.</li>
-  <li><strong>Move and resize anything you’ve added.</strong> Text can be dragged like any other shape, and blur and pixelate regions can be picked up by clicking anywhere inside them.</li>
-  <li>New shapes and text stay selected after you draw them. A color or size you pick then applies to that shape and to the next ones you draw.</li>
-  <li>The toolbar wraps onto more rows in a narrow window instead of hiding controls, and selecting a shape no longer makes the image jump. Editor windows can’t be made narrower than their controls.</li>
-  <li>Color and size dim for blur and pixelate, which don’t use them. The size control shows the size in points and goes twice as thick as before, and a color-wheel button opens the full color picker.</li>
-  <li>Two-finger scrolling moves the image around the canvas at any zoom. Click Fit (or press ⌘0) to center it again.</li>
-  <li>Quitting asks before discarding unsaved recordings, and offers to stop (or wait for) a recording in progress. A new thumbnail is never pushed out of the stack.</li>
-  <li>Screenshots leave out Loupe’s recording outline, control bar and pinned images, and the selection overlay closes if you switch apps or Spaces.</li>
-  <li>Crop opens at the aspect ratio you used last, and Return in record mode records the display under the pointer.</li>
-  <li>Opening Loupe again while it’s running shows Settings, and update checks no longer pull Loupe to the front.</li>
+  <li><strong>Redact tool.</strong> Press D (or click the filled rectangle) and drag to cover something with a solid box. It starts out black, keeps its own color separate from your arrows and shapes, and is always fully opaque, so nothing underneath can be recovered.</li>
+  <li><strong>Blur and pixelate strength.</strong> With Blur or Pixelate selected, the size slider sets how strong the effect is, from 1 to 10, for the next region or the selected one. Even the weakest setting hides text.</li>
+  <li><strong>Recordings survive a crash.</strong> Recordings are saved as they go, so if Loupe or your Mac quits unexpectedly, what was recorded (up to the last couple of seconds) is saved to your save folder the next time Loupe opens. Finished recordings are still MP4.</li>
+  <li>Clicking the gray area around the image in the editor no longer stops tool keys, Delete and the arrow keys from working.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.5/Loupe-1.0.5.dmg" type="application/octet-stream" sparkle:edSignature="cjX4zB3z6SUzruu6pOONlSSwTqGJ35/ud1bc/nlbG8Y0yOxYYJhvhgEoWH2F5deK1vZ0tCgqiI1hFnkG3pBGAg==" length="3258677" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.6/Loupe-1.0.6.dmg" type="application/octet-stream" sparkle:edSignature="wRGGXfPqeLtVle4CaW61JETsHYFSaheZ22nDpCjN786qVNj5sv0c43MOFrkjCdHLDu519mynKTid2VhXL71BBw==" length="3294865" />
     </item>
   </channel>
 </rss>
