@@ -25,7 +25,7 @@
     },
     {
       "source": "/download",
-      "destination": "https://github.com/bddicken/loupe/releases/download/v1.0.6/Loupe-1.0.6.dmg",
+      "destination": "https://github.com/bddicken/loupe/releases/download/v1.0.7/Loupe-1.0.7.dmg",
       "permanent": false
     }
   ]
