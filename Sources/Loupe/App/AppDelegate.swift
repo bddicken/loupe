@@ -64,6 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateNow
     }
 
+    /// Images opened with Loupe from Finder (Open With, or Loupe set as the default app).
+    /// At launch this can arrive before `applicationDidFinishLaunching`, so defer a turn.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            urls.forEach { self?.openInEditor($0) }
+        }
+    }
+
     /// Opening Loupe again (Finder, Spotlight) while it runs shows Settings, since the
     /// menu bar icon can be hidden (behind the notch, or by a menu bar manager).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
