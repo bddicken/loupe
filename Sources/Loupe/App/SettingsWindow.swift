@@ -2,29 +2,172 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
+/// Width of the settings content. Kept stable so tab height doesn't change with wrapping.
+private let settingsContentWidth: CGFloat = 520
+
+/// Tall enough for every tab (the shortcuts list is the longest, about 460pt)
+/// so switching tabs doesn't resize the window. Taller content still grows it,
+/// up to the visible screen.
+private let settingsPreferredContentHeight: CGFloat = 480
+
 @MainActor
 enum SettingsWindowController {
     private static var window: NSWindow?
     private static let model = SettingsModel()
+    private static let toolbarDelegate = SettingsToolbarDelegate()
 
     static func show() {
         if window == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
-                styleMask: [.titled, .closable],
+                contentRect: NSRect(x: 0, y: 0, width: settingsContentWidth, height: settingsPreferredContentHeight),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             window.title = "Loupe Settings"
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(model: model))
+            let hosting = NSHostingView(rootView: SettingsView(model: model))
+            // Don't let the form's ideal height resize the window. A single grouped
+            // form of every setting is taller than many screens; each tab reports
+            // its own height and `fit` clamps that to the visible frame.
+            hosting.sizingOptions = []
+            window.contentView = hosting
+            window.contentMinSize = NSSize(width: settingsContentWidth, height: 240)
+            window.contentMaxSize = NSSize(width: settingsContentWidth, height: 2000)
+
+            let toolbar = NSToolbar(identifier: "LoupeSettings")
+            toolbar.delegate = toolbarDelegate
+            toolbar.allowsUserCustomization = false
+            toolbar.autosavesConfiguration = false
+            toolbar.displayMode = .iconAndLabel
+            toolbar.selectedItemIdentifier = model.page.itemIdentifier
+            window.toolbar = toolbar
+            window.toolbarStyle = .preference
+            toolbarDelegate.onSelect = { page in
+                model.page = page
+            }
+
             window.center()
             self.window = window
         }
         model.refresh()
+        clampToVisibleScreen()
         DockPresence.show()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Keeps the window tall enough for the tabs, but never taller than the visible screen.
+    static func fit(contentHeight: CGFloat) {
+        guard let window, contentHeight > 1 else { return }
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 900, height: 700)
+        let margin: CGFloat = 16
+        let chrome = window.frame.height - window.contentRect(forFrameRect: window.frame).height
+        let maxContent = max(240, visible.height - chrome - margin)
+        let width = min(settingsContentWidth, max(320, visible.width - margin))
+        let height = min(max(ceil(contentHeight), min(settingsPreferredContentHeight, maxContent)), maxContent)
+        let content = window.contentRect(forFrameRect: window.frame).size
+        if abs(content.height - height) > 1 || abs(content.width - width) > 1 {
+            window.setContentSize(NSSize(width: width, height: height))
+        }
+        var frame = window.frame
+        if frame.minX < visible.minX { frame.origin.x = visible.minX }
+        if frame.maxX > visible.maxX { frame.origin.x = visible.maxX - frame.width }
+        if frame.minY < visible.minY { frame.origin.y = visible.minY }
+        if frame.maxY > visible.maxY { frame.origin.y = visible.maxY - frame.height }
+        if frame != window.frame {
+            window.setFrame(frame, display: true)
+        }
+        window.contentMinSize = NSSize(width: width, height: 240)
+        window.contentMaxSize = NSSize(width: width, height: maxContent)
+    }
+
+    private static func clampToVisibleScreen() {
+        guard let window else { return }
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        guard visible.height > 1 else { return }
+        var frame = window.frame
+        if frame.height > visible.height - 16 { frame.size.height = visible.height - 16 }
+        if frame.width > visible.width - 16 { frame.size.width = visible.width - 16 }
+        if frame.minX < visible.minX { frame.origin.x = visible.minX }
+        if frame.maxX > visible.maxX { frame.origin.x = visible.maxX - frame.width }
+        if frame.minY < visible.minY { frame.origin.y = visible.minY }
+        if frame.maxY > visible.maxY { frame.origin.y = visible.maxY - frame.height }
+        if frame != window.frame {
+            window.setFrame(frame, display: true)
+        }
+    }
+}
+
+enum SettingsPage: String, CaseIterable {
+    case general
+    case capture
+    case recording
+    case shortcuts
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .capture: "Capture"
+        case .recording: "Recording"
+        case .shortcuts: "Shortcuts"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .general: "gearshape"
+        case .capture: "camera.viewfinder"
+        case .recording: "record.circle"
+        case .shortcuts: "keyboard"
+        }
+    }
+
+    var itemIdentifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier(rawValue) }
+
+    init?(itemIdentifier: NSToolbarItem.Identifier) {
+        self.init(rawValue: itemIdentifier.rawValue)
+    }
+}
+
+/// Preference-style toolbar tabs. Retained by `SettingsWindowController` because
+/// `NSToolbar.delegate` is weak.
+private final class SettingsToolbarDelegate: NSObject, NSToolbarDelegate {
+    var onSelect: ((SettingsPage) -> Void)?
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPage.allCases.map(\.itemIdentifier)
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPage.allCases.map(\.itemIdentifier)
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPage.allCases.map(\.itemIdentifier)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard let page = SettingsPage(itemIdentifier: itemIdentifier) else { return nil }
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = page.title
+        item.paletteLabel = page.title
+        item.toolTip = page.title
+        item.image = NSImage(systemSymbolName: page.symbolName, accessibilityDescription: page.title)
+        item.target = self
+        item.action = #selector(select(_:))
+        return item
+    }
+
+    @objc private func select(_ sender: NSToolbarItem) {
+        guard let page = SettingsPage(itemIdentifier: sender.itemIdentifier) else { return }
+        sender.toolbar?.selectedItemIdentifier = sender.itemIdentifier
+        onSelect?(page)
     }
 }
 
@@ -37,6 +180,7 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var launchAtLogin = false
     @Published private(set) var loginItemMessage: String?
     @Published private(set) var shortcutsVersion = 0
+    @Published var page: SettingsPage = .general
     @Published var automaticallyChecksForUpdates = UpdateController.shared.automaticallyChecksForUpdates {
         didSet { UpdateController.shared.automaticallyChecksForUpdates = automaticallyChecksForUpdates }
     }
@@ -194,8 +338,41 @@ private struct SettingsView: View {
     @AppStorage(Preferences.Key.recordSystemAudio) private var recordSystemAudio = false
 
     var body: some View {
+        ScrollView {
+            pageForm
+                .formStyle(.grouped)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: SettingsContentHeightKey.self, value: proxy.size.height)
+                    }
+                }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onPreferenceChange(SettingsContentHeightKey.self) { height in
+            SettingsWindowController.fit(contentHeight: height)
+        }
+        .onChange(of: model.page) { _, _ in
+            model.stopRecording()
+        }
+        .onDisappear { model.stopRecording() }
+    }
+
+    @ViewBuilder
+    private var pageForm: some View {
+        switch model.page {
+        case .general: generalForm
+        case .capture: captureForm
+        case .recording: recordingForm
+        case .shortcuts: shortcutsForm
+        }
+    }
+
+    private var generalForm: some View {
         Form {
-            Section("General") {
+            Section("Login") {
                 Toggle("Launch Loupe at login", isOn: Binding(
                     get: { model.launchAtLogin },
                     set: { model.setLaunchAtLogin($0) }
@@ -218,8 +395,12 @@ private struct SettingsView: View {
                     Button("Check Now") { UpdateController.shared.checkForUpdates(nil) }
                 }
             }
+        }
+    }
 
-            Section("After capture") {
+    private var captureForm: some View {
+        Form {
+            Section {
                 Toggle("Save to folder automatically", isOn: $autoSave)
                 Toggle("Copy to clipboard", isOn: $copyToClipboard)
                 Toggle("Show quick access thumbnail", isOn: $showQuickAccess)
@@ -227,6 +408,12 @@ private struct SettingsView: View {
                 Picker("Self-timer", selection: $timerSeconds) {
                     ForEach([3, 5, 10], id: \.self) { Text("\($0) seconds").tag($0) }
                 }
+            } header: {
+                Text("After capture")
+            } footer: {
+                Text("In the capture overlay: drag to select, or click a window to capture just that window. Hold ⇧ for a square, Esc or right-click to cancel. In adjust mode, move/resize the selection, nudge with arrow keys, then press Return or double-click.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Saving") {
@@ -245,7 +432,11 @@ private struct SettingsView: View {
                     }
                 }
             }
+        }
+    }
 
+    private var recordingForm: some View {
+        Form {
             Section {
                 Picker("Format", selection: $recordingFormat) {
                     ForEach(RecordingFormat.allCases) { Text($0.displayName).tag($0.rawValue) }
@@ -253,6 +444,15 @@ private struct SettingsView: View {
                 Picker("Frame rate", selection: $recordingFrameRate) {
                     ForEach([30, 60], id: \.self) { Text("\($0) fps").tag($0) }
                 }
+            } header: {
+                Text("Format")
+            } footer: {
+                Text("GIFs have no sound and are scaled to at most \(Int(GIFExporter.maxDimension)) px at \(GIFExporter.framesPerSecond) fps.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle("Count down 3 seconds before recording", isOn: $recordingCountdown)
                 Toggle("Show cursor", isOn: $recordCursor)
                 Toggle("Highlight clicks", isOn: $highlightClicks)
@@ -261,34 +461,36 @@ private struct SettingsView: View {
                 Toggle("Record computer audio", isOn: $recordSystemAudio)
                     .disabled(recordingFormat == RecordingFormat.gif.rawValue)
             } header: {
-                Text("Screen recording")
+                Text("While recording")
             } footer: {
-                Text("Stop a recording with the Record Screen shortcut, the menu bar button, or the control bar. GIFs have no sound and are scaled to at most \(Int(GIFExporter.maxDimension)) px at \(GIFExporter.framesPerSecond) fps.")
+                Text("Stop a recording with the Record Screen shortcut, the menu bar button, or the control bar.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
 
-            Section {
-                ForEach(Shortcut.allCases, id: \.self) { shortcut in
+    private var shortcutsForm: some View {
+        Form {
+            Section("Capture") {
+                ForEach(Shortcut.allCases.filter { $0 != .recordScreen }, id: \.self) { shortcut in
                     shortcutRow(shortcut)
                 }
+            }
+            Section {
+                shortcutRow(.recordScreen)
             } header: {
-                Text("Shortcuts")
+                Text("Recording")
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Click a shortcut and press a new key combination. Esc cancels, Delete removes it. To use ⌘⇧3, ⌘⇧4 or ⌘⇧5, first turn off the macOS screenshot shortcuts.")
                     Button("Open Keyboard Shortcuts…", action: model.openKeyboardShortcutSettings)
                         .controlSize(.small)
-                    Text("In the capture overlay: drag to select, or click a window to capture just that window. Hold ⇧ for a square, Esc or right-click to cancel. In adjust mode, move/resize the selection, nudge with arrow keys, then press Return or double-click.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 500)
-        .fixedSize(horizontal: false, vertical: true)
-        .onDisappear { model.stopRecording() }
     }
 
     private func shortcutRow(_ shortcut: Shortcut) -> some View {
@@ -326,5 +528,12 @@ private struct SettingsView: View {
         } label: {
             Text(shortcut.title)
         }
+    }
+}
+
+private struct SettingsContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
