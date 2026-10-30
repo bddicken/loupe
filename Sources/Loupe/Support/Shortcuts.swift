@@ -23,9 +23,9 @@ enum Shortcut: Int, CaseIterable {
         }
     }
 
-    /// Defaults avoid the system's ⌘⇧3/4/5.
+    /// Defaults share the system's ⌘⇧ screenshot keys, so those need to be off in macOS.
     var defaultBinding: KeyBinding? {
-        let modifiers = UInt32(optionKey | shiftKey)
+        let modifiers = UInt32(cmdKey | shiftKey)
         switch self {
         case .area: return KeyBinding(keyCode: UInt32(kVK_ANSI_4), carbonModifiers: modifiers, keyLabel: "4")
         case .adjustableArea: return KeyBinding(keyCode: UInt32(kVK_ANSI_5), carbonModifiers: modifiers, keyLabel: "5")

@@ -24,14 +24,14 @@
 
 | Shortcut | Action |
 | --- | --- |
-| <kbd>⌥⇧4</kbd> | Capture area (or click a window) |
-| <kbd>⌥⇧5</kbd> | Capture area, adjust, then capture |
-| <kbd>⌥⇧3</kbd> | Capture fullscreen |
-| <kbd>⌥⇧6</kbd> | Capture previous area |
-| <kbd>⌥⇧7</kbd> | Capture with self-timer |
-| <kbd>⌥⇧8</kbd> | Record screen (press again to stop) |
+| <kbd>⌘⇧4</kbd> | Capture area (or click a window) |
+| <kbd>⌘⇧5</kbd> | Capture area, adjust, then capture |
+| <kbd>⌘⇧3</kbd> | Capture fullscreen |
+| <kbd>⌘⇧6</kbd> | Capture previous area |
+| <kbd>⌘⇧7</kbd> | Capture with self-timer |
+| <kbd>⌘⇧8</kbd> | Record screen (press again to stop) |
 
-All shortcuts can be changed in Settings. Requires macOS 14 Sonoma or later (Apple Silicon or Intel).
+⌘⇧3, ⌘⇧4 and ⌘⇧5 are also macOS screenshot shortcuts, so turn those off in System Settings → Keyboard → Keyboard Shortcuts → Screenshots. All shortcuts can be changed in Settings. Requires macOS 14 Sonoma or later (Apple Silicon or Intel).
 
 ## Install
 
