@@ -52,7 +52,7 @@ enum Preferences {
             Key.imageFormat: ImageFormat.png.rawValue,
             Key.timerSeconds: 5,
             Key.recordingFormat: RecordingFormat.mp4.rawValue,
-            Key.recordingFrameRate: 30,
+            Key.recordingFrameRate: 60,
             Key.recordingCountdown: true,
             Key.recordCursor: true,
             Key.highlightClicks: false,

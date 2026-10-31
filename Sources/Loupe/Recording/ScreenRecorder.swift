@@ -48,7 +48,10 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
         config.sourceRect = configuration.sourceRect
         config.width = Int(configuration.pixelSize.width)
         config.height = Int(configuration.pixelSize.height)
-        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(configuration.framesPerSecond))
+        // A hair under the frame time: at exactly 1/fps, ScreenCaptureKit skips any display
+        // refresh that lands just short of the interval, leaving about one gap in ten a
+        // refresh too long, which plays back as a stutter.
+        config.minimumFrameInterval = CMTime(value: 95, timescale: CMTimeScale(configuration.framesPerSecond) * 100)
         config.showsCursor = configuration.showsCursor
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB
@@ -203,7 +206,7 @@ private final class RecordingWriter {
         writer.movieFragmentInterval = CMTime(seconds: 2, preferredTimescale: 600)
 
         let pixels = pixelSize.width * pixelSize.height
-        let bitRate = min(max(pixels * Double(framesPerSecond) * 0.12, 2_000_000), 40_000_000)
+        let bitRate = min(max(pixels * Double(framesPerSecond) * 0.12, 2_000_000), 60_000_000)
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: pixelSize.width,
