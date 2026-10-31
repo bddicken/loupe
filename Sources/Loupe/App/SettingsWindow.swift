@@ -186,7 +186,7 @@ private struct SettingsView: View {
     @AppStorage(Preferences.Key.imageFormat) private var imageFormat = ImageFormat.png.rawValue
     @AppStorage(Preferences.Key.timerSeconds) private var timerSeconds = 5
     @AppStorage(Preferences.Key.recordingFormat) private var recordingFormat = RecordingFormat.mp4.rawValue
-    @AppStorage(Preferences.Key.recordingFrameRate) private var recordingFrameRate = 30
+    @AppStorage(Preferences.Key.recordingFrameRate) private var recordingFrameRate = 60
     @AppStorage(Preferences.Key.recordingCountdown) private var recordingCountdown = true
     @AppStorage(Preferences.Key.recordCursor) private var recordCursor = true
     @AppStorage(Preferences.Key.highlightClicks) private var highlightClicks = false
