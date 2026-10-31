@@ -276,7 +276,7 @@ private struct SettingsView: View {
                 Text("Shortcuts")
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Click a shortcut and press a new key combination. Esc cancels, Delete removes it. To use ⌘⇧3, ⌘⇧4 or ⌘⇧5, first turn off the macOS screenshot shortcuts.")
+                    Text("Click a shortcut and press a new key combination. Esc cancels, Delete removes it. ⌘⇧3, ⌘⇧4 and ⌘⇧5 are also macOS screenshot shortcuts: if macOS opens its own tool instead of Loupe, turn those off.")
                     Button("Open Keyboard Shortcuts…", action: model.openKeyboardShortcutSettings)
                         .controlSize(.small)
                     Text("In the capture overlay: drag to select, or click a window to capture just that window. Hold ⇧ for a square, Esc or right-click to cancel. In adjust mode, move/resize the selection, nudge with arrow keys, then press Return or double-click.")

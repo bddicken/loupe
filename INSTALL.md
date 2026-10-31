@@ -30,11 +30,13 @@ turn Loupe off and on again in the Screen Recording settings.
 
 | Shortcut | Action |
 | --- | --- |
-| ⌥⇧4 | Capture area (drag, or click a window) |
-| ⌥⇧5 | Capture area, then adjust before capturing |
-| ⌥⇧3 | Capture fullscreen |
-| ⌥⇧6 | Capture previous area |
-| ⌥⇧7 | Capture with self-timer |
-| ⌥⇧8 | Record screen (press again to stop) |
+| ⌘⇧4 | Capture area (drag, or click a window) |
+| ⌘⇧5 | Capture area, then adjust before capturing |
+| ⌘⇧3 | Capture fullscreen |
+| ⌘⇧6 | Capture previous area |
+| ⌘⇧7 | Capture with self-timer |
+| ⌘⇧8 | Record screen (press again to stop) |
+
+⌘⇧3, ⌘⇧4 and ⌘⇧5 are also macOS screenshot shortcuts, so turn those off in System Settings → Keyboard → Keyboard Shortcuts → Screenshots.
 
 All of these can be changed in Loupe → Settings.
