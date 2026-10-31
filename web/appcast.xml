@@ -4,18 +4,19 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.7</title>
-      <pubDate>Wed, 14 Oct 2026 13:07:28 +0000</pubDate>
-      <sparkle:version>76</sparkle:version>
-      <sparkle:shortVersionString>1.0.7</sparkle:shortVersionString>
+      <title>Loupe 1.0.8</title>
+      <pubDate>Sat, 31 Oct 2026 21:31:11 +0000</pubDate>
+      <sparkle:version>83</sparkle:version>
+      <sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.7</h2>
+<h2>Loupe 1.0.8</h2>
 <ul>
-  <li><strong>Open images from Finder.</strong> Loupe now shows up in Open With for PNG, JPEG, HEIC, TIFF, GIF, WebP and BMP files, and opens them straight in the editor, whether or not Loupe is already running. To make Loupe the default for a file type, select an image, press ⌘I, choose Loupe under Open with, and click Change All. Preview stays the default until you do.</li>
+  <li><strong>Smoother screen recordings.</strong> Recordings now use 60 fps by default, and frames are evenly spaced. Before, about one frame in ten arrived late, which made motion look choppy. If you chose 30 fps in Settings, that’s kept, and it’s smoother too.</li>
+  <li><strong>New default shortcuts.</strong> Capture and record shortcuts are now ⌘⇧3 through ⌘⇧8, because the old Option-Shift defaults can stop working on macOS 27.2. Shortcuts you set yourself are kept. ⌘⇧3, ⌘⇧4 and ⌘⇧5 are also macOS screenshot shortcuts, so turn those off in System Settings → Keyboard → Keyboard Shortcuts → Screenshots.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.7/Loupe-1.0.7.dmg" type="application/octet-stream" sparkle:edSignature="lNMdbCFRxWHUpT/vhp9KGX0LM0LPTQE7iY1yLjLWClNF76UXvuTL1PHpEt94JpCYew9ItQJxL3PfRVYcvIY3Cw==" length="3297225" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.8/Loupe-1.0.8.dmg" type="application/octet-stream" sparkle:edSignature="jkbFDlkf060CGSpaNP9ymwaPo8IN6D6fe5p5XVHEVyQ7/CejbLxb/rkWvprR9xg8Ogo+CqwfKTZu+t77enEiCA==" length="4370970" />
     </item>
   </channel>
 </rss>

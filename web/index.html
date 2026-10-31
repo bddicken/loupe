@@ -38,8 +38,8 @@
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": "macOS 14 or later",
         "processorRequirements": "Apple Silicon or Intel",
-        "softwareVersion": "1.0.7",
-        "downloadUrl": "https://github.com/bddicken/loupe/releases/download/v1.0.7/Loupe-1.0.7.dmg",
+        "softwareVersion": "1.0.8",
+        "downloadUrl": "https://github.com/bddicken/loupe/releases/download/v1.0.8/Loupe-1.0.8.dmg",
         "releaseNotes": "https://loupe.pics/changelog",
         "license": "https://opensource.org/license/mit",
         "isAccessibleForFree": true,
@@ -55,9 +55,9 @@
           { "@type": "Question", "name": "Which Macs does Loupe run on?",
             "acceptedAnswer": { "@type": "Answer", "text": "Loupe needs macOS 14 Sonoma or later and runs natively on both Apple Silicon and Intel Macs." } },
           { "@type": "Question", "name": "Can Loupe record my screen?",
-            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Press ⌥⇧8 to record an area, a window or the full screen, and save it as an MP4 video or an animated GIF. Recordings can include your microphone and computer audio, with clicks highlighted." } },
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Press ⌘⇧8 to record an area, a window or the full screen, and save it as an MP4 video or an animated GIF. Recordings can include your microphone and computer audio, with clicks highlighted." } },
           { "@type": "Question", "name": "Does Loupe replace the built-in macOS screenshot shortcuts?",
-            "acceptedAnswer": { "@type": "Answer", "text": "No. Loupe uses ⌥⇧ shortcuts by default, so the built-in ⌘⇧3, ⌘⇧4 and ⌘⇧5 keep working. You can change every Loupe shortcut in Settings." } },
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes, if you want it to. Loupe uses ⌘⇧ shortcuts by default, the same keys as the built-in screenshot tool, so turn off the macOS ones in System Settings → Keyboard → Keyboard Shortcuts → Screenshots. You can change every Loupe shortcut in Settings." } },
           { "@type": "Question", "name": "Does Loupe upload my screenshots?",
             "acceptedAnswer": { "@type": "Answer", "text": "No. Screenshots and recordings stay on your Mac. The only thing Loupe fetches from the internet is the update feed at loupe.pics." } },
           { "@type": "Question", "name": "Is Loupe an alternative to CleanShot X?",
@@ -74,11 +74,11 @@
       <img src="icon.png" width="148" height="148" alt="Loupe screenshot app icon: a fold-out pocket magnifier">
       <h1>Loupe</h1>
       <p class="tagline">A free, open-source screenshot and screen recording app for Mac. Capture, mark up, polish and record in seconds.</p>
-      <a class="download" href="https://github.com/bddicken/loupe/releases/download/v1.0.7/Loupe-1.0.7.dmg">
+      <a class="download" href="https://github.com/bddicken/loupe/releases/download/v1.0.8/Loupe-1.0.8.dmg">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
         Download for Mac
       </a>
-      <div class="meta">Free · Version 1.0.7 · macOS 14+ · Apple Silicon &amp; Intel</div>
+      <div class="meta">Free · Version 1.0.8 · macOS 14+ · Apple Silicon &amp; Intel</div>
       <div class="links">
         <a class="source" href="https://github.com/bddicken/loupe">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -101,7 +101,7 @@
       <h2>Screenshot and screen recording features</h2>
       <ul class="features">
         <li><h3>Area, window &amp; fullscreen</h3><p>Drag to capture, click a window to grab just that window, or adjust the selection before you shoot.</p></li>
-        <li><h3>Screen recording to MP4 or GIF</h3><p>Record an area, a window or the full screen, with a countdown, highlighted clicks, and microphone and computer audio.</p></li>
+        <li><h3>Screen recording to MP4 or GIF</h3><p>Record an area, a window or the full screen at a smooth 60 fps, with a countdown, highlighted clicks, and microphone and computer audio.</p></li>
         <li><h3>Markup</h3><p>Arrows, lines, shapes, text, highlighter, numbered steps, plus blur and pixelate for anything sensitive.</p></li>
         <li><h3>Beautiful backgrounds</h3><p>Gradients, solid colors or your own image, with padding, rounded corners and soft shadows, ready to share.</p></li>
         <li><h3>Edit &amp; adjust</h3><p>Crop with aspect presets, rotate, and tune exposure, contrast, saturation and hue.</p></li>
@@ -114,12 +114,12 @@
     <section>
       <h2>Keyboard shortcuts</h2>
       <table class="shortcuts">
-        <tr><td><kbd>⌥⇧4</kbd></td><td>Capture an area (or click a window)</td></tr>
-        <tr><td><kbd>⌥⇧5</kbd></td><td>Capture an area, adjusting it before capturing</td></tr>
-        <tr><td><kbd>⌥⇧3</kbd></td><td>Capture the full screen</td></tr>
-        <tr><td><kbd>⌥⇧6</kbd></td><td>Capture the previous area again</td></tr>
-        <tr><td><kbd>⌥⇧7</kbd></td><td>Capture with a self-timer</td></tr>
-        <tr><td><kbd>⌥⇧8</kbd></td><td>Record the screen (press again to stop)</td></tr>
+        <tr><td><kbd>⌘⇧4</kbd></td><td>Capture an area (or click a window)</td></tr>
+        <tr><td><kbd>⌘⇧5</kbd></td><td>Capture an area, adjusting it before capturing</td></tr>
+        <tr><td><kbd>⌘⇧3</kbd></td><td>Capture the full screen</td></tr>
+        <tr><td><kbd>⌘⇧6</kbd></td><td>Capture the previous area again</td></tr>
+        <tr><td><kbd>⌘⇧7</kbd></td><td>Capture with a self-timer</td></tr>
+        <tr><td><kbd>⌘⇧8</kbd></td><td>Record the screen (press again to stop)</td></tr>
       </table>
       <p class="note">Every shortcut can be changed in Loupe’s Settings.</p>
     </section>
@@ -149,9 +149,9 @@
       <h3>Which Macs does Loupe run on?</h3>
       <p>Loupe needs macOS 14 Sonoma or later and runs natively on both Apple Silicon and Intel Macs.</p>
       <h3>Can Loupe record my screen?</h3>
-      <p>Yes. Press <kbd>⌥⇧8</kbd> to record an area, a window or the full screen, and save it as an MP4 video or an animated GIF. Recordings can include your microphone and computer audio, with clicks highlighted.</p>
+      <p>Yes. Press <kbd>⌘⇧8</kbd> to record an area, a window or the full screen, and save it as an MP4 video or an animated GIF. Recordings can include your microphone and computer audio, with clicks highlighted.</p>
       <h3>Does Loupe replace the built-in macOS screenshot shortcuts?</h3>
-      <p>No. Loupe uses <kbd>⌥⇧</kbd> shortcuts by default, so the built-in <kbd>⌘⇧3</kbd>, <kbd>⌘⇧4</kbd> and <kbd>⌘⇧5</kbd> keep working. You can change every Loupe shortcut in Settings. <a href="/vs/macos-screenshot">How Loupe compares to the macOS Screenshot app</a>.</p>
+      <p>Yes, if you want it to. Loupe uses <kbd>⌘⇧</kbd> shortcuts by default, the same keys as the built-in screenshot tool, so turn off the macOS ones in System Settings → Keyboard → Keyboard Shortcuts → Screenshots. You can change every Loupe shortcut in Settings. <a href="/vs/macos-screenshot">How Loupe compares to the macOS Screenshot app</a>.</p>
       <h3>Does Loupe upload my screenshots?</h3>
       <p>No. Screenshots and recordings stay on your Mac. The only thing Loupe fetches from the internet is the update feed at loupe.pics.</p>
       <h3>Is Loupe an alternative to CleanShot X?</h3>
@@ -167,7 +167,7 @@
         <a href="/vs/macos-screenshot">Loupe vs macOS Screenshot</a>
         <a href="https://github.com/bddicken/loupe">GitHub</a>
       </nav>
-      Loupe 1.0.7 · Free and open source (MIT) · <a href="https://x.com/benjdicken">@benjdicken</a>
+      Loupe 1.0.8 · Free and open source (MIT) · <a href="https://x.com/benjdicken">@benjdicken</a>
     </footer>
   </main>
 </body>
