@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        RunningCopy.start()
         Preferences.registerDefaults()
         NSApp.mainMenu = MainMenu.build()
         DockPresence.startObserving()

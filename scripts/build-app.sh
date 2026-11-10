@@ -29,6 +29,20 @@ swift build -c "$CONFIG" "${ARCH_FLAGS[@]}"
 BIN_DIR="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --show-bin-path)"
 
 APP="$ROOT/build/Loupe.app"
+# A Loupe still running from build/Loupe.app breaks once its bundle is replaced: macOS
+# can't check the code signature of an executable that's gone from disk, so Sparkle
+# can't launch its installer ("An error occurred while launching the installer").
+# Quit it before replacing the bundle and reopen it once the new one is built.
+RUNNING_PIDS=(${(f)"$(ps -axo pid=,comm= | awk -v exe="$APP/Contents/MacOS/Loupe" '{pid=$1; sub(/^ *[0-9]+ /, "")} $0 == exe {print pid}')"})
+if (( ${#RUNNING_PIDS} )); then
+  echo "Quitting the Loupe running from $APP (it reopens after the build)…"
+  kill -TERM "${RUNNING_PIDS[@]}" 2>/dev/null || true
+  for _ in {1..50}; do
+    kill -0 "${RUNNING_PIDS[@]}" 2>/dev/null || break
+    sleep 0.2
+  done
+  kill -0 "${RUNNING_PIDS[@]}" 2>/dev/null && { echo "build-app: Loupe (pid ${RUNNING_PIDS[*]}) didn't quit; quit it and try again" >&2; exit 1; }
+fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN_DIR/Loupe" "$APP/Contents/MacOS/Loupe"
@@ -73,3 +87,7 @@ codesign "${SIGN_FLAGS[@]}" "$SPARKLE"
 codesign "${SIGN_FLAGS[@]}" --identifier dev.loupe.Loupe --entitlements "$ROOT/Resources/Loupe.entitlements" "$APP"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP (signed with: $IDENTITY)"
+if (( ${#RUNNING_PIDS} )); then
+  open "$APP"
+  echo "Reopened Loupe."
+fi
