@@ -4,19 +4,18 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.9</title>
-      <pubDate>Tue, 10 Nov 2026 05:35:58 +0000</pubDate>
-      <sparkle:version>88</sparkle:version>
-      <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
+      <title>Loupe 1.0.10</title>
+      <pubDate>Tue, 10 Nov 2026 14:56:00 +0000</pubDate>
+      <sparkle:version>90</sparkle:version>
+      <sparkle:shortVersionString>1.0.10</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.9</h2>
+<h2>Loupe 1.0.10</h2>
 <ul>
-  <li><strong>Settings that fit your screen.</strong> Settings is now split into General, Capture, Recording and Shortcuts tabs instead of one long page that could run off the bottom of a laptop screen. The window is never taller than your screen, scrolls if it needs to, and can be resized. It opens on the tab you used last.</li>
-  <li><strong>One-click choices.</strong> Image format, recording format, frame rate and the self-timer delay are now buttons you click once, instead of pop-up menus.</li>
+  <li><strong>Clearer updates after reinstalling.</strong> If a new copy of Loupe is installed over the one that's running, Check for Updates now offers to reopen Loupe instead of failing with “An error occurred while launching the installer.” Automatic update checks wait until Loupe has been reopened.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.9/Loupe-1.0.9.dmg" type="application/octet-stream" sparkle:edSignature="ZFXwNF+F0/SuaEadJsfL1sx7AyBUdWIPjUtSuZij1Aeg7Xb0ZhlVu/SQswRXRuUtGhDFLVp47ShRqL5rHAI9DA==" length="3340233" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.10/Loupe-1.0.10.dmg" type="application/octet-stream" sparkle:edSignature="QvtVEl5QXVH/kOwOWYat999iYb3i/LUdK4eyIwY7Z3XYkMzVDOHyYlZb/qiA6anBS0axpm1LGKL6U8Pid0FBAg==" length="3349873" />
     </item>
   </channel>
 </rss>
