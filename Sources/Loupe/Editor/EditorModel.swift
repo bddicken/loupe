@@ -141,7 +141,11 @@ final class EditorModel: ObservableObject {
     @Published var toast: String?
 
     // Annotation tool settings.
-    @Published var tool: AnnotationTool = .arrow
+    /// Picking a drawing tool deselects the last shape, so the next press draws a new one
+    /// instead of grabbing that shape's handles, and the toolbar styles the next shape.
+    @Published var tool: AnnotationTool = .arrow {
+        didSet { if tool != oldValue, tool.kind != nil { selectedAnnotationID = nil } }
+    }
     /// Color for the next annotation drawn: the last one picked in the toolbar.
     @Published private(set) var annotationColor = RGBAColor(hex: 0xFF3B30)
     /// Stroke width in points for the next annotation; text and counters scale from it.

@@ -325,7 +325,7 @@ enum AnnotationRenderer {
             path.move(to: annotation.start)
             path.addLine(to: annotation.end)
             return path
-        case .rectangle: return CGPath(rect: annotation.rect, transform: nil)
+        case .rectangle, .redact, .blur, .pixelate: return CGPath(rect: annotation.rect, transform: nil)
         case .ellipse: return CGPath(ellipseIn: annotation.rect, transform: nil)
         case .pen, .highlighter: return freehandPath(annotation.points)
         default: return nil
@@ -353,19 +353,25 @@ enum AnnotationRenderer {
         }
     }
 
-    /// `tolerance` is in source pixels. Text, counters, redactions and blur/pixelate
-    /// regions are solid, so a click anywhere on them counts. With `interior`, clicking inside a
-    /// hollow box counts too; otherwise only its outline does.
+    /// `tolerance` is in source pixels. Text and counters are solid, so a click anywhere
+    /// on them counts. With `interior` (the Select tool), clicking inside a box, redaction
+    /// or blur/pixelate region counts too; otherwise only its edge does, so a drawing tool
+    /// can start a new shape on top of one (they're often big, and drawn over).
     static func hitTest(
         _ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false,
         orientation: CGAffineTransform = .identity
     ) -> Bool {
         let kind = annotation.kind
-        if kind == .text || kind == .step || kind == .redact || kind.isRegionEffect || (interior && kind.isBoxed) {
+        if kind == .text || kind == .step || (interior && kind.isBoxed) {
             return bounds(annotation, orientation: orientation).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
         }
         guard let path = outlinePath(annotation) else { return false }
-        let width = (kind == .highlighter ? highlighterWidth(annotation) : annotation.strokeWidth) + tolerance * 2
+        let stroke: CGFloat = switch kind {
+        case .highlighter: highlighterWidth(annotation)
+        case .redact, .blur, .pixelate: 0 // Drawn without a stroke.
+        default: annotation.strokeWidth
+        }
+        let width = stroke + tolerance * 2
         return path.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10).contains(point)
     }
 
