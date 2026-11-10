@@ -4,18 +4,19 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.10</title>
-      <pubDate>Tue, 10 Nov 2026 14:56:00 +0000</pubDate>
-      <sparkle:version>90</sparkle:version>
-      <sparkle:shortVersionString>1.0.10</sparkle:shortVersionString>
+      <title>Loupe 1.0.11</title>
+      <pubDate>Tue, 10 Nov 2026 18:00:09 +0000</pubDate>
+      <sparkle:version>93</sparkle:version>
+      <sparkle:shortVersionString>1.0.11</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.10</h2>
+<h2>Loupe 1.0.11</h2>
 <ul>
-  <li><strong>Clearer updates after reinstalling.</strong> If a new copy of Loupe is installed over the one that's running, Check for Updates now offers to reopen Loupe instead of failing with “An error occurred while launching the installer.” Automatic update checks wait until Loupe has been reopened.</li>
+  <li><strong>Draw over blurs, pixelations and redactions.</strong> With a drawing tool, starting a new arrow or shape inside a blurred, pixelated or redacted area now draws it, instead of dragging that area away. Grab a region by its edge to move it, or use the Select tool to move it from anywhere inside.</li>
+  <li><strong>Switching tools starts fresh.</strong> Picking a drawing tool deselects the shape you just drew, so your next drag draws the new shape instead of resizing the last one.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.10/Loupe-1.0.10.dmg" type="application/octet-stream" sparkle:edSignature="QvtVEl5QXVH/kOwOWYat999iYb3i/LUdK4eyIwY7Z3XYkMzVDOHyYlZb/qiA6anBS0axpm1LGKL6U8Pid0FBAg==" length="3349873" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.11/Loupe-1.0.11.dmg" type="application/octet-stream" sparkle:edSignature="tBcZ0fpqPoHu0mYbJuAfIGf6RIX1/6Tb5KPaQRAxcx8mD0M8j3LCMyBf5aMFUVdaJ4HqmKa6RRcdddcvZb0rAg==" length="3350203" />
     </item>
   </channel>
 </rss>
