@@ -65,7 +65,7 @@ fi
 LOUPE_VERSION="$VERSION" scripts/build-app.sh release
 
 APP="$ROOT/build/Loupe.app"
-IDENTITY="$(codesign -dvv "$APP" 2>&1 | awk -F= '/^Authority=/ {print $2; exit}')"
+IDENTITY="$(codesign -dvv "$APP" 2>&1 | awk -F= '/^Authority=/ && !found {print $2; found=1}')"
 SIGNED=0
 [[ "$IDENTITY" == Developer\ ID\ Application* ]] && SIGNED=1
 
