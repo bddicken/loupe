@@ -353,10 +353,10 @@ enum AnnotationRenderer {
         }
     }
 
-    /// `tolerance` is in source pixels. Text and counters are solid, so a click anywhere
-    /// on them counts. With `interior` (the Select tool), clicking inside a box, redaction
-    /// or blur/pixelate region counts too; otherwise only its edge does, so a drawing tool
-    /// can start a new shape on top of one (they're often big, and drawn over).
+    /// `tolerance` is in source pixels. Text and counters are solid, so a point anywhere
+    /// on them counts. With `interior`, a point inside a box, redaction or blur/pixelate
+    /// region counts too (the Select tool, and what a click selects with any tool);
+    /// otherwise only its edge does.
     static func hitTest(
         _ annotation: Annotation, at point: CGPoint, tolerance: CGFloat, interior: Bool = false,
         orientation: CGAffineTransform = .identity

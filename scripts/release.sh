@@ -3,7 +3,8 @@
 #
 # Usage: scripts/release.sh <version> [--no-publish]     e.g. scripts/release.sh 1.0.1
 #
-# 1. Checks you're on an up-to-date, clean main (so the build matches GitHub).
+# 1. Checks you're on an up-to-date, clean main (so the build matches GitHub),
+#    and runs the editor checks (scripts/test-editor.sh; LOUPE_SKIP_CHECKS=1 skips them).
 # 2. Builds the universal app and dist/Loupe-<version>.dmg, signed with your
 #    code signing identity. With a "Developer ID Application" certificate it's
 #    also notarized and stapled (one-time setup below).
@@ -59,6 +60,13 @@ if [[ ! -x "$SPARKLE_BIN/sign_update" ]]; then
   mkdir -p "$ROOT/.build/sparkle-$SPARKLE_VERSION"
   curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz" \
     | tar -xJ -C "$ROOT/.build/sparkle-$SPARKLE_VERSION"
+fi
+
+# --- Checks ----------------------------------------------------------------
+# The editor's mouse behaviour, driven through the real UI in an invisible window.
+if [[ -z "${LOUPE_SKIP_CHECKS:-}" ]]; then
+  echo "Checking the editor…"
+  scripts/test-editor.sh || fail "the editor checks failed (scripts/test-editor.sh -v lists them; LOUPE_SKIP_CHECKS=1 releases anyway)"
 fi
 
 # --- Build -----------------------------------------------------------------

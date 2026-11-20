@@ -36,18 +36,30 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         }
     }
     private var moving: (id: UUID, last: CGPoint, didCheckpoint: Bool)?
+    /// A press only moves a shape once it has travelled this far (view points), so a
+    /// click that selects one never nudges it.
+    private let moveThreshold: CGFloat = 3
+    /// With a drawing tool, the shape under the press: releasing without dragging (a
+    /// click) selects it, while dragging draws a new shape on top of it.
+    private var selectOnClick: UUID?
     /// A text pressed with the Text tool: a click (no drag) edits it on mouse up; a drag moves it.
     private var editTextOnClick: UUID?
 
-    private enum Handle {
+    private enum Handle: Equatable {
         case endpoint(Int)
         case corner(Int) // 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left
+        case edge(Int) // The middle of a box's side: 0 top, 1 right, 2 bottom, 3 left. Moves that side only.
         case scale(Int) // Bounding-box corner that scales text, counters and freehand strokes.
         case textWidth(trailing: Bool) // A text box's left or right edge: sets the width it wraps at.
     }
     /// The fixed point while dragging a box corner is the opposite corner.
     private var resizing: (id: UUID, handle: Handle, anchor: CGPoint, original: Annotation, didCheckpoint: Bool)?
     private let handleRadius: CGFloat = 4.5
+    /// A box's side gets a handle in its middle only when it's at least this long (view
+    /// points), so on a small box they don't crowd the corner handles.
+    private let edgeHandleMinimumSide: CGFloat = 44
+    /// Follows the pointer to set the cursor (cursor rects can't follow a shape's outline).
+    private var cursorTracking: NSTrackingArea?
 
     private var textView: NSTextView?
     /// The text annotation being edited, and whether it already exists in the model.
@@ -92,11 +104,10 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         if lastTool != model.tool {
             lastTool = model.tool
             if model.tool != .text { endTextEditing() }
-            window?.invalidateCursorRects(for: self)
         }
         repositionTextView()
-        // The selected text's width handles get a resize cursor.
-        window?.invalidateCursorRects(for: self)
+        // The tool or the selection may have changed under a pointer that hasn't moved.
+        refreshCursor()
         needsDisplay = true
     }
 
@@ -143,6 +154,9 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             let handles = self.handles(for: selected)
             if case .scale = handles.first?.handle {
                 strokeDashed(AnnotationRenderer.bounds(selected, orientation: transform).applying(transform), color: .controlAccentColor)
+            } else if selected.kind.isRegionEffect {
+                // A blur or pixelation has no outline of its own; show where it ends.
+                strokeDashed(selected.rect.applying(transform), color: .controlAccentColor)
             }
             drawHandles(handles.map { $0.point.applying(transform) }, in: context)
         }
@@ -171,12 +185,22 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             return [(.endpoint(0), annotation.start), (.endpoint(1), annotation.end)]
         case .rectangle, .ellipse, .blur, .pixelate, .redact:
             let r = annotation.rect
-            return [
+            // Corners first: where handles overlap, a press takes the corner.
+            var handles: [(handle: Handle, point: CGPoint)] = [
                 (.corner(0), CGPoint(x: r.minX, y: r.minY)),
                 (.corner(1), CGPoint(x: r.maxX, y: r.minY)),
                 (.corner(2), CGPoint(x: r.maxX, y: r.maxY)),
                 (.corner(3), CGPoint(x: r.minX, y: r.maxY)),
             ]
+            if r.width * viewScale >= edgeHandleMinimumSide {
+                handles.append((.edge(0), CGPoint(x: r.midX, y: r.minY)))
+                handles.append((.edge(2), CGPoint(x: r.midX, y: r.maxY)))
+            }
+            if r.height * viewScale >= edgeHandleMinimumSide {
+                handles.append((.edge(1), CGPoint(x: r.maxX, y: r.midY)))
+                handles.append((.edge(3), CGPoint(x: r.minX, y: r.midY)))
+            }
+            return handles
         case .text, .step, .pen, .highlighter:
             let r = AnnotationRenderer.bounds(annotation, orientation: transform)
             var handles: [(handle: Handle, point: CGPoint)] = [
@@ -228,21 +252,102 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         path.stroke()
     }
 
-    override func resetCursorRects() {
-        let (tool, selected) = MainActor.assumeIsolated { (model.tool, model.selectedAnnotation) }
-        let cursor: NSCursor = switch tool {
-        case .select: .arrow
-        case .text: .iBeam
-        default: .crosshair
-        }
-        addCursorRect(contentRect, cursor: cursor)
-        if let selected, selected.kind == .text, textView == nil {
-            let box = textBox(selected)
-            let size = (handleRadius + 4) * 2
-            for x in [box.minX, box.maxX] {
-                addCursorRect(CGRect(x: x - size / 2, y: box.midY - size / 2, width: size, height: size), cursor: .resizeLeftRight)
+    // MARK: - Cursor
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        guard cursorTracking == nil else { return }
+        // Follows the visible part of the view by itself.
+        let area = NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self
+        )
+        addTrackingArea(area)
+        cursorTracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) { updateCursor(for: event) }
+    override func mouseEntered(with event: NSEvent) { updateCursor(for: event) }
+    override func cursorUpdate(with event: NSEvent) { updateCursor(for: event) }
+    override func mouseExited(with event: NSEvent) { setCursor(.arrow) }
+
+    private func updateCursor(for event: NSEvent) {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        // Zoomed in, the view reaches under the toolbar and panels, and as first responder
+        // it can be sent moves from anywhere in the window: those aren't over the canvas.
+        guard visibleRect.contains(viewPoint) else { return }
+        // The text being typed shows its own I-beam.
+        if let textView, textView.frame.contains(viewPoint) { return }
+        let option = event.modifierFlags.contains(.option)
+        MainActor.assumeIsolated { setCursor(cursor(atViewPoint: viewPoint, option: option)) }
+    }
+
+    /// Only the key window's canvas owns the cursor.
+    private func setCursor(_ cursor: NSCursor) {
+        guard window?.isKeyWindow == true else { return }
+        cursor.set()
+    }
+
+    /// Shows the right cursor after a change the pointer didn't cause by moving (a tool
+    /// picked with a key, a shape selected by a click), if the pointer is over the canvas.
+    private func refreshCursor() {
+        // Not in the middle of a drag, which keeps the cursor it started with.
+        guard moving == nil, resizing == nil, draft == nil, textDrag == nil else { return }
+        guard let window, window.isKeyWindow, NSEvent.pressedMouseButtons == 0,
+              NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber else { return }
+        let viewPoint = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard visibleRect.contains(viewPoint) else { return }
+        if let textView, textView.frame.contains(viewPoint) { return }
+        let option = NSEvent.modifierFlags.contains(.option)
+        MainActor.assumeIsolated { cursor(atViewPoint: viewPoint, option: option).set() }
+    }
+
+    /// The cursor says what a press here would do: resize by a handle, move a shape
+    /// (an open hand), or what the tool does.
+    @MainActor
+    func cursor(atViewPoint viewPoint: CGPoint, option: Bool = false) -> NSCursor {
+        let tool = model.tool
+        switch pressTarget(at: viewPoint.applying(transform.inverted()), viewPoint: viewPoint, option: option) {
+        case let .handle(annotation, handle):
+            return resizeCursor(for: handle, of: annotation)
+        case let .move(annotation):
+            // With the Text tool, a click on a text edits it.
+            return tool == .text && annotation.kind == .text ? .iBeam : .openHand
+        case .nothing:
+            guard contentRect.contains(viewPoint) else { return .arrow }
+            return switch tool {
+            case .select: .arrow
+            case .text: .iBeam
+            default: .crosshair
             }
         }
+    }
+
+    /// A resize cursor along the direction the handle moves in, on screen.
+    private func resizeCursor(for handle: Handle, of annotation: Annotation) -> NSCursor {
+        let dx: CGFloat, dy: CGFloat
+        switch handle {
+        case .textWidth:
+            return .resizeLeftRight
+        case let .endpoint(index):
+            // Along the line, to the nearest 45°.
+            let from = annotation.points[1 - index].applying(transform), to = annotation.points[index].applying(transform)
+            let step = (atan2(to.y - from.y, to.x - from.x) / (.pi / 4)).rounded()
+            dx = cos(step * .pi / 4).rounded()
+            dy = sin(step * .pi / 4).rounded()
+        case .corner, .scale, .edge:
+            // Away from the middle of the box: diagonally for a corner, straight for a side.
+            guard let point = handles(for: annotation).first(where: { $0.handle == handle })?.point.applying(transform) else { return .arrow }
+            let box = AnnotationRenderer.bounds(annotation, orientation: transform).applying(transform)
+            let isEdge = if case .edge = handle { true } else { false }
+            let x = point.x - box.midX, y = point.y - box.midY
+            dx = isEdge && abs(x) < abs(y) ? 0 : (x < 0 ? -1 : 1)
+            dy = isEdge && abs(x) >= abs(y) ? 0 : (y < 0 ? -1 : 1)
+        }
+        if dy == 0 { return .resizeLeftRight }
+        if dx == 0 { return .resizeUpDown }
+        guard #available(macOS 15, *) else { return .pointingHand }
+        // The view is flipped: the same sign on both axes runs top-left to bottom-right.
+        return .frameResize(position: dx * dy > 0 ? .topLeft : .topRight, directions: .all)
     }
 
     // MARK: - Mouse
@@ -251,46 +356,89 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         MainActor.assumeIsolated { handleMouseDown(event) }
     }
 
+    /// What a press takes hold of.
+    private enum PressTarget {
+        /// A handle of the selected shape: dragging resizes it.
+        case handle(Annotation, Handle)
+        /// A shape: dragging moves it.
+        case move(Annotation)
+        /// Neither: a drawing tool draws, and the selection is dropped.
+        case nothing
+    }
+
+    /// Tools that draw by dragging (Text and Counter place with a click instead).
+    private func drawsByDragging(_ tool: AnnotationTool) -> Bool {
+        tool.kind.map { $0 != .text && $0 != .step } ?? false
+    }
+
+    /// `point` is in source pixels. ⌥ with a drawing tool always draws, even on top of the selected shape.
+    @MainActor
+    private func pressTarget(at point: CGPoint, viewPoint: CGPoint, option: Bool) -> PressTarget {
+        if let (selected, handle, _) = handleHit(atViewPoint: viewPoint) { return .handle(selected, handle) }
+        let tool = model.tool
+        if tool != .select, option { return .nothing }
+        if drawsByDragging(tool) {
+            // A drag always draws a new shape, even on top of others, except on the
+            // selected shape, which it moves. (A click selects the shape under it.)
+            if let selected = model.selectedAnnotation, grabs(selected, at: point) { return .move(selected) }
+            return .nothing
+        }
+        // The Select tool grabs a shape anywhere inside it; Text and Counter, which place
+        // with a click, only on its outline (so a click inside a box still places one).
+        return annotation(at: point, interior: tool == .select).map { .move($0) } ?? .nothing
+    }
+
     @MainActor
     private func handleMouseDown(_ event: NSEvent) {
         endTextEditing()
         window?.makeFirstResponder(self)
         let point = sourcePoint(event)
+        let tool = model.tool
+        let option = event.modifierFlags.contains(.option)
+        selectOnClick = nil
 
-        if let (selected, handle, _) = handleHit(atViewPoint: convert(event.locationInWindow, from: nil)) {
+        switch pressTarget(at: point, viewPoint: convert(event.locationInWindow, from: nil), option: option) {
+        case let .handle(selected, handle):
+            let r = selected.rect
             let anchor: CGPoint
             switch handle {
             case let .endpoint(index): anchor = selected.points[1 - index]
             case let .corner(index), let .scale(index): anchor = handles(for: selected)[(index + 2) % 4].point
+            // The middle of the opposite side.
+            case let .edge(index): anchor = [
+                CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX, y: r.midY), CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.midY),
+            ][index]
             case .textWidth: anchor = selected.start
             }
             resizing = (selected.id, handle, anchor, selected, false)
             return
-        }
 
-        // With a drawing tool, clicking an existing annotation selects it
-        // (⌥ forces drawing on top instead).
-        let isSelectTool = model.tool == .select
-        let hit = isSelectTool || !event.modifierFlags.contains(.option) ? annotation(at: point, interior: isSelectTool) : nil
-
-        if let hit {
-            model.selectedAnnotationID = hit.id
-            if hit.kind == .text, event.clickCount == 2 {
-                beginTextEditing(hit, isNew: false)
+        case let .move(shape):
+            if model.selectedAnnotationID != shape.id { model.selectedAnnotationID = shape.id }
+            if shape.kind == .text, event.clickCount == 2 {
+                beginTextEditing(shape, isNew: false)
             } else {
                 // Any shape, text included, can be dragged to move it.
-                moving = (hit.id, point, false)
-                if hit.kind == .text, model.tool == .text { editTextOnClick = hit.id }
+                moving = (shape.id, point, false)
+                if shape.kind == .text, tool == .text { editTextOnClick = shape.id }
+                if drawsByDragging(tool) {
+                    // A click on a shape lying over the selected one selects that instead.
+                    let under = annotation(at: point, interior: true)
+                    if under?.id != shape.id { selectOnClick = under?.id }
+                }
             }
             needsDisplay = true
             return
+
+        case .nothing:
+            break
         }
 
-        // Clicking away from the selected layer deselects it, so toolbar changes
+        // Pressing away from the selected layer deselects it, so toolbar changes
         // go back to styling the next annotation instead of that layer.
         model.selectedAnnotationID = nil
 
-        switch model.tool {
+        switch tool {
         case .select:
             break
         case .text:
@@ -300,11 +448,22 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         case .step:
             model.addAnnotation(model.newAnnotation(.step, points: [point]))
         default:
-            if let kind = model.tool.kind {
-                draft = model.newAnnotation(kind, points: kind.isFreehand ? [point] : [point, point])
-            }
+            guard let kind = tool.kind else { break }
+            // Released without dragging (a click), this selects the shape under it.
+            if !option { selectOnClick = annotation(at: point, interior: true)?.id }
+            draft = model.newAnnotation(kind, points: kind.isFreehand ? [point] : [point, point])
         }
         needsDisplay = true
+    }
+
+    /// Whether a press at `point` with a drawing tool takes hold of the selected shape.
+    /// Blurs, pixelations and redactions are filled, so anywhere inside them does;
+    /// a hollow box only by its outline, so a new shape can still be drawn inside it.
+    private func grabs(_ selected: Annotation, at point: CGPoint) -> Bool {
+        AnnotationRenderer.hitTest(
+            selected, at: point, tolerance: tolerance,
+            interior: selected.kind.isRegionEffect || selected.kind == .redact, orientation: transform
+        )
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -323,6 +482,12 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
                     switch resize.handle {
                     case let .endpoint(index): annotation.points[index] = target
                     case .corner: annotation.points = [resize.anchor, target]
+                    case let .edge(index):
+                        // That side follows the pointer; the opposite side and the other axis stay put.
+                        let r = resize.original.rect
+                        annotation.points = index % 2 == 0
+                            ? [CGPoint(x: r.minX, y: resize.anchor.y), CGPoint(x: r.maxX, y: point.y)]
+                            : [CGPoint(x: resize.anchor.x, y: r.minY), CGPoint(x: point.x, y: r.maxY)]
                     case let .textWidth(trailing):
                         // In view space, where the text box is upright; at least about one character wide.
                         let box = textBox(resize.original)
@@ -350,8 +515,10 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             }
             if var move = moving {
                 if !move.didCheckpoint {
+                    guard hypot(point.x - move.last.x, point.y - move.last.y) * viewScale >= moveThreshold else { return }
                     model.checkpoint()
                     move.didCheckpoint = true
+                    setCursor(.closedHand)
                 }
                 model.moveAnnotation(move.id, dx: point.x - move.last.x, dy: point.y - move.last.y)
                 move.last = point
@@ -378,10 +545,16 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // What's under the pointer has changed (a shape drawn, selected or moved).
+        defer { updateCursor(for: event) }
         MainActor.assumeIsolated {
             let wasDragged = moving?.didCheckpoint ?? false
+            let wasMoving = moving != nil
             moving = nil
             resizing = nil
+            // Set by a press with a drawing tool; a click (no drag) selects this shape.
+            let clicked = selectOnClick.flatMap { id in model.state.annotations.first { $0.id == id } }
+            selectOnClick = nil
             if let id = editTextOnClick {
                 editTextOnClick = nil
                 if !wasDragged, let text = model.state.annotations.first(where: { $0.id == id }) {
@@ -402,13 +575,19 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
                 needsDisplay = true
                 return
             }
-            guard let draft else { return }
-            self.draft = nil
-            let isMeaningful = draft.kind.isFreehand
-                ? draft.points.count > 1
-                : hypot(draft.end.x - draft.start.x, draft.end.y - draft.start.y) * viewScale >= 3
-            if isMeaningful {
-                model.addAnnotation(draft)
+            if let draft {
+                self.draft = nil
+                let isMeaningful = draft.kind.isFreehand
+                    ? draft.points.count > 1
+                    : hypot(draft.end.x - draft.start.x, draft.end.y - draft.start.y) * viewScale >= 3
+                if isMeaningful {
+                    model.addAnnotation(draft)
+                } else if let clicked {
+                    model.selectedAnnotationID = clicked.id
+                }
+            } else if wasMoving, !wasDragged, let clicked {
+                // A click on a shape lying over the selected one.
+                model.selectedAnnotationID = clicked.id
             }
             needsDisplay = true
         }
@@ -533,7 +712,6 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         repositionTextView()
         window?.makeFirstResponder(textView)
         textView.selectAll(nil)
-        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 
@@ -601,7 +779,7 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             model.updateAnnotation(annotation.id, checkpoint: true) { $0.text = text }
         }
         window?.makeFirstResponder(self)
-        window?.invalidateCursorRects(for: self)
+        refreshCursor()
         needsDisplay = true
     }
 }

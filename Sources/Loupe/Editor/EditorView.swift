@@ -16,11 +16,17 @@ struct EditorView: View {
                 BackgroundPanel(model: model)
                     .frame(width: EditorView.backgroundPanelWidth)
                     .transition(.move(edge: .leading).combined(with: .opacity))
+                    // Above the canvas, like the toolbar (see below).
+                    .zIndex(1)
                 Divider()
             }
             VStack(spacing: 0) {
                 AnnotationToolbar(model: model)
                     .equatable()
+                    // Above the canvas: zoomed in, the image reaches under the toolbar, where
+                    // it's clipped from view; but clipping doesn't stop it taking clicks, and
+                    // being later in the stack it would take the toolbar's.
+                    .zIndex(1)
                 Divider()
                 canvas
                 Divider()
@@ -980,7 +986,9 @@ private final class CanvasGestureView: NSView {
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard event.window === window else { return event }
         let point = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(point) else { return event }
+        // Only over the canvas area. Zoomed in, this view is as large as the image and
+        // reaches under the panels, where scrolling must scroll them, not pan the image.
+        guard visibleRect.contains(point) else { return event }
         // The image is centered in the canvas, so anchors are relative to its center.
         let anchor = CGPoint(x: point.x - bounds.midX, y: point.y - bounds.midY)
 
