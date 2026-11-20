@@ -50,13 +50,17 @@ open build/Loupe.app
 `Loupe --edit image.png` opens an image straight in the editor. `Loupe --debug-record 5` records the main
 display for 5 seconds (no overlay or countdown) and logs where the file was saved.
 
+`scripts/test-editor.sh` checks the editor's mouse behaviour (selecting, moving, resizing and drawing with
+each tool, the cursor, the toolbar while zoomed in) by driving the real editor UI with synthetic clicks in a
+window that's never visible. `-v` lists every check. The release script runs it first.
+
 ## Release
 
 ```bash
 scripts/release.sh 1.0.1
 ```
 
-On an up-to-date, clean `main`, this builds and signs `dist/Loupe-1.0.1.dmg`, signs it for Sparkle
+On an up-to-date, clean `main`, this runs the editor checks, builds and signs `dist/Loupe-1.0.1.dmg`, signs it for Sparkle
 updates, publishes GitHub Release `v1.0.1` with the DMG, writes the site into `web/` (pages,
 changelog, sitemap, `appcast.xml`, `vercel.json`) and pushes. The Vercel project deploys `web/` to
 [loupe.pics](https://loupe.pics) on every push to `main`, and installed copies update from
