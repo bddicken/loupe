@@ -105,6 +105,7 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             lastTool = model.tool
             if model.tool != .text { endTextEditing() }
         }
+        syncEditingStyle()
         repositionTextView()
         // The tool or the selection may have changed under a pointer that hasn't moved.
         refreshCursor()
@@ -715,6 +716,25 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
+    /// A color, size, font or weight picked in the toolbar while typing applies to the
+    /// text being typed: a new text takes the next annotation's style, and one already
+    /// in the model (the selected layer, which the toolbar restyles) its latest.
+    @MainActor
+    private func syncEditingStyle() {
+        guard let (annotation, isNew) = editing else { return }
+        let source = isNew
+            ? model.newAnnotation(.text, points: annotation.points)
+            : model.state.annotations.first { $0.id == annotation.id }
+        guard let source else { return }
+        var styled = annotation
+        styled.color = source.color
+        styled.fontSize = source.fontSize
+        styled.font = source.font
+        styled.fontWeight = source.fontWeight
+        styled.shadow = source.shadow
+        if styled != annotation { editing = (styled, isNew) }
+    }
+
     /// Sizes and places the editor to show all of the text. It lays the text out at its
     /// real size and is scaled to the zoom, so it wraps exactly like the drawn text
     /// (the system font's spacing changes with point size).
@@ -722,10 +742,13 @@ final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         guard let textView, let annotation = editing?.annotation,
               let container = textView.textContainer, let layout = textView.layoutManager else { return }
         let scale = viewScale
-        let font = NSFont.systemFont(ofSize: annotation.fontSize, weight: .bold)
-        if textView.font != font {
+        let font = AnnotationRenderer.font(annotation)
+        let color = annotation.color.nsColor
+        if textView.font != font || textView.textColor != color {
             textView.font = font
-            textView.typingAttributes = [.font: font, .foregroundColor: annotation.color.nsColor]
+            textView.textColor = color
+            textView.insertionPointColor = color
+            textView.typingAttributes = [.font: font, .foregroundColor: color]
         }
         container.containerSize = CGSize(width: annotation.textWidth ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)

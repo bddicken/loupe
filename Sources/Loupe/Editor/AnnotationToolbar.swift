@@ -19,6 +19,11 @@ struct AnnotationToolbar: View, Equatable {
         var strengthOf: Annotation.Kind?
         var colorApplies: Bool
         var sizeApplies: Bool
+        var font: TextFont
+        var fontWeight: TextWeight
+        var fontApplies: Bool
+        var shadow: Bool
+        var shadowApplies: Bool
         var isCropping: Bool
     }
 
@@ -34,6 +39,11 @@ struct AnnotationToolbar: View, Equatable {
             strengthOf: model.styleTargetKind?.isRegionEffect == true ? model.styleTargetKind : nil,
             colorApplies: model.toolbarColorApplies,
             sizeApplies: model.toolbarSizeApplies,
+            font: model.toolbarFont,
+            fontWeight: model.toolbarFontWeight,
+            fontApplies: model.toolbarFontApplies,
+            shadow: model.toolbarShadow,
+            shadowApplies: model.toolbarShadowApplies,
             isCropping: model.isCropping
         )
     }
@@ -74,6 +84,11 @@ struct AnnotationToolbar: View, Equatable {
             .modifier(StyleAvailability(applies: values.colorApplies))
             ToolbarSeparator()
             sizeControl
+            ToolbarSeparator()
+            fontMenu
+                .modifier(StyleAvailability(applies: values.fontApplies))
+            shadowButton
+                .modifier(StyleAvailability(applies: values.shadowApplies))
             ToolbarSeparator()
             // Always there (dimmed with nothing selected), so selecting a shape never
             // changes the toolbar's size and moves the image.
@@ -175,6 +190,75 @@ struct AnnotationToolbar: View, Equatable {
         .modifier(StyleAvailability(applies: values.sizeApplies))
     }
 
+    /// Weight and typeface of text, in one menu. Its button is a sample in that font
+    /// and weight rather than the font's name, so it stays one small fixed size.
+    private var fontMenu: some View {
+        Menu {
+            Section("Weight") {
+                ForEach(TextWeight.allCases) { weight in
+                    Toggle(weight.title, isOn: Binding(
+                        get: { values.fontWeight == weight },
+                        set: { _ in model.setAnnotationFontWeight(weight) }
+                    ))
+                }
+            }
+            Section("Font") {
+                ForEach(TextFont.systemDesigns, id: \.self) { font in
+                    fontItem(font)
+                }
+                Menu("More Fonts") {
+                    ForEach(TextFont.installedFamilies, id: \.self) { family in
+                        fontItem(.family(family))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text("Ag")
+                    .font(Font(AnnotationRenderer.font(values.font, weight: values.fontWeight, size: 14)))
+                    .lineLimit(1)
+                    .fixedSize()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 44, height: 26)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(values.fontApplies
+            ? "Font: \(values.font.title) \(values.fontWeight.title)"
+            : "Font and weight apply to text")
+    }
+
+    private func fontItem(_ font: TextFont) -> some View {
+        Toggle(font.title, isOn: Binding(
+            get: { values.font == font },
+            set: { _ in model.setAnnotationFont(font) }
+        ))
+    }
+
+    private var shadowButton: some View {
+        Button {
+            model.setAnnotationShadow(!values.shadow)
+        } label: {
+            ShadowIcon()
+                .frame(width: 30, height: 26)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(values.shadow ? Color.accentColor.opacity(0.22) : .clear)
+                )
+                .foregroundStyle(values.shadow ? Color.accentColor : .primary)
+        }
+        .buttonStyle(.plain)
+        .help(!values.shadowApplies ? "Highlights, redactions, blurs and pixelations have no shadow"
+            : values.shadow ? "Drop Shadow: On" : "Drop Shadow: Off")
+    }
+
     /// Opens the system color panel. Its continuous changes to one layer (or to the
     /// next shape's color) merge into one undo step.
     private func openColorPanel() {
@@ -194,6 +278,21 @@ struct AnnotationToolbar: View, Equatable {
             get: { values.size },
             set: { model.setAnnotationSize($0.rounded(), checkpoint: false) }
         )
+    }
+}
+
+/// A square with a drop shadow behind it. (The system's "shadow" symbol doesn't read as one.)
+private struct ShadowIcon: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .opacity(0.35)
+                .frame(width: 11, height: 11)
+                .offset(x: 2.5, y: 2.5)
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .frame(width: 11, height: 11)
+                .offset(x: -1, y: -1)
+        }
     }
 }
 
