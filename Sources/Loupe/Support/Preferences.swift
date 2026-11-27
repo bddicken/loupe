@@ -41,6 +41,9 @@ enum Preferences {
         static let highlightClicks = "highlightClicks"
         static let recordMicrophone = "recordMicrophone"
         static let recordSystemAudio = "recordSystemAudio"
+        static let annotationShadow = "annotationShadow"
+        static let annotationFont = "annotationFont"
+        static let annotationFontWeight = "annotationFontWeight"
     }
 
     static func registerDefaults() {
@@ -58,6 +61,7 @@ enum Preferences {
             Key.highlightClicks: false,
             Key.recordMicrophone: false,
             Key.recordSystemAudio: false,
+            Key.annotationShadow: true,
         ])
     }
 
@@ -89,6 +93,20 @@ enum Preferences {
     static var recordSystemAudio: Bool { registered { UserDefaults.standard.bool(forKey: Key.recordSystemAudio) } }
     static var recordingFormat: RecordingFormat {
         registered { RecordingFormat(rawValue: UserDefaults.standard.string(forKey: Key.recordingFormat) ?? "") ?? .mp4 }
+    }
+
+    /// The last drop shadow, font and weight picked in the editor's toolbar; new editors start from them.
+    static var annotationShadow: Bool {
+        get { registered { UserDefaults.standard.bool(forKey: Key.annotationShadow) } }
+        set { UserDefaults.standard.set(newValue, forKey: Key.annotationShadow) }
+    }
+    static var annotationFont: TextFont {
+        get { TextFont(storedValue: UserDefaults.standard.string(forKey: Key.annotationFont) ?? "") }
+        set { UserDefaults.standard.set(newValue.storedValue, forKey: Key.annotationFont) }
+    }
+    static var annotationFontWeight: TextWeight {
+        get { UserDefaults.standard.string(forKey: Key.annotationFontWeight).flatMap(TextWeight.init) ?? .bold }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Key.annotationFontWeight) }
     }
 
     /// How the last crop past the image's edges was filled; new edits start from it.

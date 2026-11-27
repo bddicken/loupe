@@ -75,6 +75,68 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     }
 }
 
+/// The typeface of a text annotation: one of the system font's designs, or an installed family.
+enum TextFont: Hashable {
+    case system, rounded, serif, monospaced
+    case family(String)
+
+    static let systemDesigns: [TextFont] = [.system, .rounded, .serif, .monospaced]
+
+    /// Installed font families, by name (without the system's hidden ones).
+    static let installedFamilies: [String] = NSFontManager.shared.availableFontFamilies
+        .filter { !$0.hasPrefix(".") }
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+    var title: String {
+        switch self {
+        case .system: "System"
+        case .rounded: "Rounded"
+        case .serif: "Serif"
+        case .monospaced: "Mono"
+        case let .family(name): name
+        }
+    }
+
+    /// For UserDefaults.
+    var storedValue: String {
+        switch self {
+        case .system: "system"
+        case .rounded: "rounded"
+        case .serif: "serif"
+        case .monospaced: "monospaced"
+        case let .family(name): "family:" + name
+        }
+    }
+
+    init(storedValue: String) {
+        switch storedValue {
+        case "rounded": self = .rounded
+        case "serif": self = .serif
+        case "monospaced": self = .monospaced
+        case let value where value.hasPrefix("family:"): self = .family(String(value.dropFirst("family:".count)))
+        default: self = .system
+        }
+    }
+}
+
+enum TextWeight: String, CaseIterable, Identifiable {
+    case light, regular, medium, semibold, bold, heavy
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+
+    var nsWeight: NSFont.Weight {
+        switch self {
+        case .light: .light
+        case .regular: .regular
+        case .medium: .medium
+        case .semibold: .semibold
+        case .bold: .bold
+        case .heavy: .heavy
+        }
+    }
+}
+
 /// A markup element. Coordinates are in the *source* image's pixel space
 /// (top-left origin, before rotation/crop) so annotations follow the image
 /// through rotate, flip and crop.
@@ -87,6 +149,14 @@ struct Annotation: Identifiable, Equatable {
         var isRegionEffect: Bool { self == .blur || self == .pixelate }
         var isFreehand: Bool { self == .pen || self == .highlighter }
         var isBoxed: Bool { self == .rectangle || self == .ellipse || self == .redact || isRegionEffect }
+        /// Kinds that can have a drop shadow: the drawn ones, but not the highlighter
+        /// (it tints what's under it), redactions or blur/pixelate regions.
+        var castsShadow: Bool {
+            switch self {
+            case .arrow, .line, .rectangle, .ellipse, .pen, .text, .step: true
+            case .highlighter, .blur, .pixelate, .redact: false
+            }
+        }
     }
 
     /// Blur and pixelate strength, from weak to strong.
@@ -106,6 +176,11 @@ struct Annotation: Identifiable, Equatable {
     var number = 0
     /// Blur and pixelate only: how strong the effect is (in `strengthRange`).
     var strength = 4.0
+    /// Text only: its typeface and weight.
+    var font = TextFont.system
+    var fontWeight = TextWeight.bold
+    /// Whether it has a soft drop shadow (only for kinds that `castsShadow`).
+    var shadow = true
 
     var start: CGPoint { points.first ?? .zero }
     var end: CGPoint { points.last ?? .zero }
@@ -158,6 +233,20 @@ enum AnnotationRenderer {
         context.setLineCap(.round)
         context.setLineJoin(.round)
 
+        // Core Graphics measures shadows in device pixels, whatever the context's transform
+        // (the zoom, a Retina backing store), so scale them from source pixels by hand: the
+        // shadow then looks the same in the editor at any zoom as in the saved image.
+        let toDevice = context.userSpaceToDeviceSpaceTransform
+        let outputScale = sqrt(abs(toDevice.a * toDevice.d - toDevice.b * toDevice.c))
+        let shadow = dropShadow(of: annotation).map { shadow in
+            (offset: CGSize(width: 0, height: -shadow.offset * outputScale), blur: shadow.blur * outputScale,
+             color: CGColor(gray: 0, alpha: shadow.opacity))
+        }
+        // Counters shadow only their disc (see drawStep).
+        if let shadow, annotation.kind != .step {
+            context.setShadow(offset: shadow.offset, blur: shadow.blur, color: shadow.color)
+        }
+
         let color = annotation.color.cgColor
         switch annotation.kind {
         case .arrow:
@@ -195,6 +284,9 @@ enum AnnotationRenderer {
         case .text:
             context.concatenate(upright(about: annotation.start, orientation))
             let string = NSAttributedString(string: annotation.text, attributes: textAttributes(annotation))
+            // As one layer, so the letters shadow what's under the text and not each other.
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            defer { context.endTransparencyLayer() }
             if annotation.textWidth != nil {
                 // A finite rect (an unbounded one drops lines when rasterized for export),
                 // with headroom so rounding never clips the last line.
@@ -206,7 +298,7 @@ enum AnnotationRenderer {
             }
         case .step:
             context.concatenate(upright(about: annotation.start, orientation))
-            drawStep(annotation, in: context)
+            drawStep(annotation, in: context, shadow: shadow.map { ($0.blur, $0.color) })
         case .redact:
             // Always opaque, whatever color was picked.
             context.setFillColor(annotation.color.cgColor.copy(alpha: 1) ?? color)
@@ -216,16 +308,66 @@ enum AnnotationRenderer {
         }
     }
 
+    /// The drop shadow an annotation is drawn with, in source pixels (the shadow falls
+    /// straight down by `offset`), or nil without one. Text and counters keep the subtle
+    /// one they always had; strokes get one that grows with their width.
+    static func dropShadow(of annotation: Annotation) -> (offset: CGFloat, blur: CGFloat, opacity: CGFloat)? {
+        guard annotation.shadow, annotation.kind.castsShadow else { return nil }
+        switch annotation.kind {
+        case .text: return (annotation.fontSize * 0.03, annotation.fontSize * 0.08, 0.25)
+        case .step: return (0, stepRadius(annotation) * 0.3, 0.3)
+        default: return (annotation.strokeWidth * 0.3, annotation.strokeWidth * 1.5, 0.3)
+        }
+    }
+
     static func textAttributes(_ annotation: Annotation) -> [NSAttributedString.Key: Any] {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
-        shadow.shadowBlurRadius = annotation.fontSize * 0.08
-        shadow.shadowOffset = NSSize(width: 0, height: -annotation.fontSize * 0.03)
-        return [
-            .font: NSFont.systemFont(ofSize: annotation.fontSize, weight: .bold),
+        [
+            .font: font(annotation),
             .foregroundColor: annotation.color.nsColor,
-            .shadow: shadow,
         ]
+    }
+
+    /// Resolved fonts, by typeface, weight and size (looking one up is slow, and every redraw needs it).
+    private static let fonts = NSCache<NSString, NSFont>()
+
+    /// A text annotation's font. An installed family uses its face nearest the weight;
+    /// one that's no longer installed falls back to the system font.
+    static func font(_ annotation: Annotation) -> NSFont {
+        font(annotation.font, weight: annotation.fontWeight, size: annotation.fontSize)
+    }
+
+    static func font(_ font: TextFont, weight: TextWeight, size: CGFloat) -> NSFont {
+        let key = "\(font.storedValue)|\(weight.rawValue)|\(size)" as NSString
+        if let cached = fonts.object(forKey: key) { return cached }
+        let system = NSFont.systemFont(ofSize: size, weight: weight.nsWeight)
+        func designed(_ design: NSFontDescriptor.SystemDesign) -> NSFont {
+            system.fontDescriptor.withDesign(design).flatMap { NSFont(descriptor: $0, size: size) } ?? system
+        }
+        let resolved: NSFont = switch font {
+        case .system: system
+        case .rounded: designed(.rounded)
+        case .serif: designed(.serif)
+        case .monospaced: designed(.monospaced)
+        case let .family(name): familyFont(name, weight: weight, size: size) ?? system
+        }
+        fonts.setObject(resolved, forKey: key)
+        return resolved
+    }
+
+    /// The face of an installed family nearest `weight`: an upright one of normal width
+    /// if the family has any (so never an italic or a condensed face just for its weight).
+    private static func familyFont(_ family: String, weight: TextWeight, size: CGFloat) -> NSFont? {
+        var best: (font: NSFont, distance: CGFloat)?
+        for member in NSFontManager.shared.availableMembers(ofFontFamily: family) ?? [] {
+            guard member.count > 3, let name = member[0] as? String, let font = NSFont(name: name, size: size) else { continue }
+            let mask = NSFontTraitMask(rawValue: (member[3] as? NSNumber)?.uintValue ?? 0)
+            let isPlain = mask.isDisjoint(with: [.italicFontMask, .condensedFontMask, .expandedFontMask])
+            let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+            let faceWeight = CGFloat((traits?[.weight] as? NSNumber)?.doubleValue ?? 0)
+            let distance = abs(faceWeight - weight.nsWeight.rawValue) + (isPlain ? 0 : 10)
+            if best.map({ distance < $0.distance }) ?? true { best = (font, distance) }
+        }
+        return best?.font
     }
 
     /// The laid-out size of a text annotation (source pixels, upright): as wide as its
@@ -251,10 +393,10 @@ enum AnnotationRenderer {
     static func stepRadius(_ annotation: Annotation) -> CGFloat { annotation.fontSize * 0.75 }
     static func highlighterWidth(_ annotation: Annotation) -> CGFloat { annotation.strokeWidth * 4 }
 
-    private static func drawStep(_ annotation: Annotation, in context: CGContext) {
+    private static func drawStep(_ annotation: Annotation, in context: CGContext, shadow: (blur: CGFloat, color: CGColor)?) {
         let radius = stepRadius(annotation)
         let circle = CGRect(x: annotation.start.x - radius, y: annotation.start.y - radius, width: radius * 2, height: radius * 2)
-        context.setShadow(offset: .zero, blur: radius * 0.3, color: CGColor(gray: 0, alpha: 0.3))
+        if let shadow { context.setShadow(offset: .zero, blur: shadow.blur, color: shadow.color) }
         context.setFillColor(annotation.color.cgColor)
         context.fillEllipse(in: circle)
         context.setShadow(offset: .zero, blur: 0, color: nil)

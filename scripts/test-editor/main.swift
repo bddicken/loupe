@@ -279,6 +279,80 @@ enum TestEditor {
         check("cursor: Text tool, I-beam over the image and over a text", cursor(900, 650) === NSCursor.iBeam && cursor(560, 513) === NSCursor.iBeam)
         check("cursor: Text tool, open hand on another shape's outline", cursor(620, 135) === NSCursor.openHand)
 
+        // --- Drop shadow, font and weight: for the selected shape and the next ones, in the editor as saved
+        /// How opaque the saved drawing is just below a level line: its shadow, if it has one.
+        func alphaBelowLine(shadow: Bool) -> CGFloat {
+            var line = model.newAnnotation(.line, points: [CGPoint(x: 20, y: 40), CGPoint(x: 180, y: 40)])
+            line.strokeWidth = 8
+            line.shadow = shadow
+            guard let image = AnnotationRenderer.rasterize([line], pixelSize: CGSize(width: 200, height: 100), transform: .identity) else { return -1 }
+            return NSBitmapImageRep(cgImage: image).colorAt(x: 100, y: 49)?.alphaComponent ?? -1
+        }
+        check("a shape with a shadow is saved with one", alphaBelowLine(shadow: true) > 0.02, "alpha \(alphaBelowLine(shadow: true))")
+        check("a shape without a shadow is saved without one", alphaBelowLine(shadow: false) == 0, "alpha \(alphaBelowLine(shadow: false))")
+        var shadowLayers = 0
+        var above = canvas.layer?.superlayer
+        while let layer = above {
+            if layer.shadowOpacity > 0 { shadowLayers += 1 }
+            above = layer.superlayer
+        }
+        check("the editor adds no shadow of its own to the drawings", shadowLayers == 0, "\(shadowLayers) layers above the canvas cast one")
+
+        model.selectedAnnotationID = nil
+        model.setAnnotationShadow(true)
+        model.selectedAnnotationID = arrow.id
+        let beforeShadow = model.state
+        model.setAnnotationShadow(false)
+        check("shadow off applies to the selected shape", annotation(arrow.id)?.shadow == false && !model.toolbarShadow)
+        check("  …and to the next one", model.newAnnotation(.rectangle, points: [.zero, .zero]).shadow == false)
+        model.undo()
+        check("  …as one undo step", model.state == beforeShadow)
+        let fontBefore = model.annotationFont
+        model.setAnnotationFont(.serif)
+        check("the font doesn't apply to an arrow", model.annotationFont == fontBefore && !model.toolbarFontApplies)
+        model.selectedAnnotationID = nil
+        model.setAnnotationShadow(true)
+        model.tool = .blur
+        check("blur has no shadow or font", !model.toolbarShadowApplies && !model.toolbarFontApplies)
+
+        // A font or weight picked while typing changes the text being typed.
+        await pick(.text)
+        model.setAnnotationFont(.system)
+        model.setAnnotationFontWeight(.bold)
+        n = count
+        await click(c(840, 560))
+        if let editor = find(NSTextView.self, in: canvas) {
+            editor.insertText("Hi", replacementRange: editor.selectedRange())
+            let bold = editor.font
+            model.setAnnotationFont(.serif)
+            model.setAnnotationFontWeight(.light)
+            await pause(0.3)
+            let size = editor.font?.pointSize ?? 0
+            check("picking a font while typing restyles the text being typed",
+                  editor.font != bold && editor.font == AnnotationRenderer.font(.serif, weight: .light, size: size), "\(editor.font?.fontName ?? "no font")")
+            model.commitTextEditing?()
+            let typed = model.state.annotations.last
+            check("  …and the finished text keeps it", count == n + 1 && typed?.text == "Hi" && typed?.font == .serif && typed?.fontWeight == .light,
+                  "\(count - n) new, \(String(describing: typed?.font)) \(String(describing: typed?.fontWeight))")
+            if let typed {
+                model.selectedAnnotationID = typed.id
+                model.setAnnotationFontWeight(.heavy)
+                check("the weight applies to a selected text", annotation(typed.id)?.fontWeight == .heavy && model.toolbarFontWeight == .heavy)
+                check("an installed family uses its face nearest the weight",
+                      AnnotationRenderer.font(.family("Helvetica Neue"), weight: .light, size: 20).fontName == "HelveticaNeue-Light"
+                          && AnnotationRenderer.font(.family("Georgia"), weight: .heavy, size: 20).fontName == "Georgia-Bold")
+                check("a font that isn't installed falls back to the system font",
+                      AnnotationRenderer.font(.family("No Such Font"), weight: .bold, size: 20) == NSFont.systemFont(ofSize: 20, weight: .bold))
+            }
+        } else {
+            check("a click with the Text tool starts typing", false)
+        }
+        // Back to the defaults, which are remembered between runs.
+        model.selectedAnnotationID = nil
+        model.setAnnotationFont(.system)
+        model.setAnnotationFontWeight(.bold)
+        model.setAnnotationShadow(true)
+
         // --- Zoomed in, the image reaches under the toolbar and panels; they must keep working
         model.selectedAnnotationID = nil
         model.zoom(by: 4)

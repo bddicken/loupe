@@ -45,6 +45,17 @@ struct EditorView: View {
 
     // MARK: - Canvas
 
+    /// The soft shadow that lifts the image off the editor's canvas. It goes on the
+    /// bottom layer only: on the whole stack, SwiftUI gives every layer its own copy,
+    /// and the drawings would show a shadow that the saved image doesn't have.
+    private struct CanvasLift: ViewModifier {
+        var isOn = true
+
+        func body(content: Content) -> some View {
+            content.shadow(color: .black.opacity(isOn ? 0.25 : 0), radius: 10, y: 3)
+        }
+    }
+
     private var canvas: some View {
         GeometryReader { geometry in
             ZStack {
@@ -70,11 +81,11 @@ struct EditorView: View {
                                 )
                             }
                             .frame(width: size.width, height: size.height)
+                            .modifier(CanvasLift())
                         } else {
                             editedImage(preview, size: size, scale: layout.scale * zoom)
                         }
                     }
-                    .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
                     .offset(model.pan)
                 }
 
@@ -126,6 +137,7 @@ struct EditorView: View {
                     .equatable()
                     .frame(width: size.width, height: size.height)
                     .clipped()
+                    .modifier(CanvasLift())
                 // Like export: the shadow is cast by the rounded shape (not the image's own
                 // transparency), never shows under the image, and stops at the canvas edge.
                 shape
@@ -146,6 +158,8 @@ struct EditorView: View {
             }
             PreviewSurface(frames: model.previewFrames, cornerRadius: radius)
                 .frame(width: contentSize.width, height: contentSize.height)
+                // On a background, that is what lifts off the canvas instead.
+                .modifier(CanvasLift(isOn: !backdrop.enabled))
             annotationCanvas(preview, contentSize: contentSize)
         }
         .frame(width: size.width, height: size.height)

@@ -158,6 +158,11 @@ final class EditorModel: ObservableObject {
     /// Color of the next redaction. Its own (black to start), so redacting doesn't
     /// take the red picked for arrows, nor change it.
     @Published private(set) var redactColor = RGBAColor(hex: 0x000000)
+    /// Whether the next annotation has a drop shadow, and the next text's font and
+    /// weight. Remembered between editors (see Preferences).
+    @Published private(set) var annotationShadow = Preferences.annotationShadow
+    @Published private(set) var annotationFont = Preferences.annotationFont
+    @Published private(set) var annotationFontWeight = Preferences.annotationFontWeight
     /// The selected layer, if any. While one is selected, the toolbar shows its style,
     /// and a style picked there applies to it as well as to the next annotation.
     @Published var selectedAnnotationID: UUID?
@@ -784,7 +789,10 @@ final class EditorModel: ObservableObject {
             color: kind == .redact ? redactColor : annotationColor,
             strokeWidth: annotationSize * pixelsPerPoint,
             fontSize: (10 + annotationSize * 4) * pixelsPerPoint,
-            strength: effectStrength
+            strength: effectStrength,
+            font: annotationFont,
+            fontWeight: annotationFontWeight,
+            shadow: annotationShadow
         )
         if kind == .step {
             annotation.number = (state.annotations.filter { $0.kind == .step }.map(\.number).max() ?? 0) + 1
@@ -876,6 +884,25 @@ final class EditorModel: ObservableObject {
     /// False for redactions, which are solid boxes.
     var toolbarSizeApplies: Bool { styleTargetKind != .redact }
 
+    /// False for the kinds drawn without a shadow (highlighter, redaction, blur, pixelate).
+    var toolbarShadowApplies: Bool { styleTargetKind?.castsShadow != false }
+
+    /// The font and weight apply to text only.
+    var toolbarFontApplies: Bool { styleTargetKind == nil || styleTargetKind == .text }
+
+    /// What the toolbar shows: the selected layer's, or the next annotation's.
+    var toolbarShadow: Bool {
+        selectedAnnotation.flatMap { $0.kind.castsShadow ? $0.shadow : nil } ?? annotationShadow
+    }
+
+    var toolbarFont: TextFont {
+        selectedAnnotation.flatMap { $0.kind == .text ? $0.font : nil } ?? annotationFont
+    }
+
+    var toolbarFontWeight: TextWeight {
+        selectedAnnotation.flatMap { $0.kind == .text ? $0.fontWeight : nil } ?? annotationFontWeight
+    }
+
     /// The size slider's range: strength for blur and pixelate, points otherwise.
     var toolbarSizeRange: ClosedRange<Double> {
         styleTargetKind?.isRegionEffect == true ? Annotation.strengthRange : Self.annotationSizeRange
@@ -915,6 +942,34 @@ final class EditorModel: ObservableObject {
         }
         if let id = selectedAnnotationID {
             updateAnnotation(id, checkpoint: shouldCheckpoint) { $0.color = color }
+        }
+    }
+
+    /// Like the color: for the next annotation, and the selected layer, if any.
+    func setAnnotationShadow(_ shadow: Bool) {
+        guard toolbarShadowApplies else { return }
+        annotationShadow = shadow
+        Preferences.annotationShadow = shadow
+        if let id = selectedAnnotationID {
+            updateAnnotation(id, checkpoint: true) { $0.shadow = shadow }
+        }
+    }
+
+    func setAnnotationFont(_ font: TextFont) {
+        guard toolbarFontApplies else { return }
+        annotationFont = font
+        Preferences.annotationFont = font
+        if let id = selectedAnnotationID {
+            updateAnnotation(id, checkpoint: true) { $0.font = font }
+        }
+    }
+
+    func setAnnotationFontWeight(_ weight: TextWeight) {
+        guard toolbarFontApplies else { return }
+        annotationFontWeight = weight
+        Preferences.annotationFontWeight = weight
+        if let id = selectedAnnotationID {
+            updateAnnotation(id, checkpoint: true) { $0.fontWeight = weight }
         }
     }
 
