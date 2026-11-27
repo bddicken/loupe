@@ -4,23 +4,21 @@
     <title>Loupe</title>
     <link>https://loupe.pics/appcast.xml</link>
     <item>
-      <title>Loupe 1.0.12</title>
-      <pubDate>Fri, 20 Nov 2026 04:16:06 +0000</pubDate>
-      <sparkle:version>96</sparkle:version>
-      <sparkle:shortVersionString>1.0.12</sparkle:shortVersionString>
+      <title>Loupe 1.0.13</title>
+      <pubDate>Fri, 27 Nov 2026 00:52:01 +0000</pubDate>
+      <sparkle:version>100</sparkle:version>
+      <sparkle:shortVersionString>1.0.13</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-<h2>Loupe 1.0.12</h2>
+<h2>Loupe 1.0.13</h2>
 <ul>
-  <li><strong>Click a shape to select it, with any tool.</strong> With a drawing tool, clicking an earlier blur, pixelation, redaction or shape now selects it and shows its handles, so you can resize it and drag it to move it. A selected blur or pixelation is outlined, so you can see where it ends.</li>
-  <li><strong>Dragging always draws.</strong> With a drawing tool, a drag draws a new shape even when it starts on top of another one (an arrow starting at a box's edge, or at a label). Only the selected shape moves when you drag it; click a shape first to move it, or use the Select tool.</li>
-  <li><strong>Resize one side at a time.</strong> Rectangles, ellipses, blurs, pixelations and redactions have a handle in the middle of each side, as well as on the corners.</li>
-  <li><strong>The cursor shows what a drag will do.</strong> An open hand over a shape you can move, and resize arrows over its handles.</li>
-  <li><strong>The toolbar works while zoomed in.</strong> When the image was zoomed in, clicks on the toolbar and the background panel were taken by the part of the image hidden underneath them, so tools couldn't be switched. Scrolling over the side panels now scrolls them instead of the image.</li>
-  <li>Clicking a shape to select it no longer nudges it, and picking the current tool again deselects the selected shape.</li>
+  <li><strong>Choose the font and weight of text.</strong> A new menu in the editor toolbar sets the weight, from Light to Heavy, and the font: System, Rounded, Serif, Mono, or any font installed on your Mac. It applies to the selected text and to the text you add next, including text you're in the middle of typing.</li>
+  <li><strong>Turn drop shadows on or off.</strong> A new toolbar button controls the drop shadow of arrows, lines, rectangles, ellipses, pen strokes, text and counters, for the selected shape and the ones you draw next.</li>
+  <li><strong>Saved images match the editor.</strong> The editor showed a shadow behind every shape, but only text and counters had one in the saved image. Shapes now look the same in both. Shadows are on to begin with, so arrows and shapes are saved with the soft shadow you saw in the editor; turn it off with the new button.</li>
+  <li>Loupe remembers the font, weight and shadow you picked for the next screenshot.</li>
 </ul>
       ]]></description>
-      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.12/Loupe-1.0.12.dmg" type="application/octet-stream" sparkle:edSignature="83gcMOU9zeAyy8dkq6pcFP3K8H3SndmbC63IsnP95H1dYNALV1xUzYBzfTTgr+gSVU+00Md4Ny4tx6kFPocrAw==" length="3373368" />
+      <enclosure url="https://github.com/bddicken/loupe/releases/download/v1.0.13/Loupe-1.0.13.dmg" type="application/octet-stream" sparkle:edSignature="ex2U3TesSzhztjaZfCmFLgOyyeCPEEVBlR7y775OA+uuszCSf/aW1Uk8WD2MYd7kINVZXcjQ1OEVT0xg9A/eDA==" length="3461965" />
     </item>
   </channel>
 </rss>
